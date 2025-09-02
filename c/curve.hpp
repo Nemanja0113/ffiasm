@@ -1,4 +1,5 @@
 #include <string>
+#include <vector>
 
 #include "exp.hpp"
 #include "multiexp.hpp"
@@ -131,6 +132,17 @@ public:
                              unsigned int n, unsigned int nThreads=0) {
         MSM<Curve<BaseField>, BaseField> msm(*this);
         msm.run(r, bases, scalars, scalarSize, n, nThreads);
+    }
+
+    // Batch MSM for combining multiple MSM operations
+    void multiMulByScalarMSMBatch(std::vector<Point> &results, 
+                                  std::vector<PointAffine*> basesArray, 
+                                  std::vector<uint8_t*> scalarsArray,
+                                  std::vector<unsigned int> scalarSizes,
+                                  std::vector<unsigned int> nArray, 
+                                  unsigned int nThreads=0) {
+        MSM<Curve<BaseField>, BaseField> msm(*this);
+        msm.runBatch(results, basesArray, scalarsArray, scalarSizes, nArray, nThreads);
     }
 
 #ifdef COUNT_OPS

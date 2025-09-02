@@ -2,6 +2,7 @@
 #define MSM_HPP
 
 #include <cstdint>
+#include <vector>
 
 template <typename Curve, typename BaseField>
 class MSM {
@@ -68,6 +69,14 @@ public:
              uint64_t _scalarSize,
              uint64_t _n,
              uint64_t _nThreads=0);
+
+    // New batch MSM function for combining multiple MSM operations
+    void runBatch(std::vector<typename Curve::Point> &results,
+                  std::vector<typename Curve::PointAffine*> _basesArray,
+                  std::vector<uint8_t*> _scalarsArray,
+                  std::vector<uint64_t> _scalarSizes,
+                  std::vector<uint64_t> _nArray,
+                  uint64_t _nThreads=0);
 };
 
 #include "msm.cpp"

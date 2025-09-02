@@ -219,3 +219,53 @@ void MSM<Curve, BaseField>::run(typename Curve::Point &r,
     std::cerr << "              - Adaptive chunk sizing" << std::endl;
     std::cerr << "              - Detailed sub-phase timing" << std::endl;
 }
+
+// Batch MSM implementation for combining multiple MSM operations
+template <typename Curve, typename BaseField>
+void MSM<Curve, BaseField>::runBatch(std::vector<typename Curve::Point> &results,
+                                     std::vector<typename Curve::PointAffine*> _basesArray,
+                                     std::vector<uint8_t*> _scalarsArray,
+                                     std::vector<uint64_t> _scalarSizes,
+                                     std::vector<uint64_t> _nArray,
+                                     uint64_t _nThreads)
+{
+    auto totalStart = std::chrono::high_resolution_clock::now();
+    
+    ThreadPool &threadPool = ThreadPool::defaultPool();
+    const uint64_t nThreads = threadPool.getThreadCount();
+    const uint64_t nOperations = _basesArray.size();
+    
+    // Validate input arrays
+    if (_basesArray.size() != _scalarsArray.size() || 
+        _scalarsArray.size() != _scalarSizes.size() || 
+        _scalarSizes.size() != _nArray.size()) {
+        std::cerr << "            MSM Batch Error: Array sizes mismatch" << std::endl;
+        return;
+    }
+    
+    // Resize results vector
+    results.resize(nOperations);
+    
+    std::cerr << "            MSM Batch: Processing " << nOperations << " operations" << std::endl;
+    
+    // Process each MSM operation in parallel
+    threadPool.parallelFor(0, nOperations, [&] (int begin, int end, int numThread) {
+        for (int op = begin; op < end; op++) {
+            auto opStart = std::chrono::high_resolution_clock::now();
+            
+            // Call individual MSM for this operation
+            run(results[op], _basesArray[op], _scalarsArray[op], 
+                _scalarSizes[op], _nArray[op], _nThreads);
+            
+            auto opEnd = std::chrono::high_resolution_clock::now();
+            auto opDuration = std::chrono::duration_cast<std::chrono::microseconds>(opEnd - opStart);
+            std::cerr << "              MSM Batch Op " << op << ": " << opDuration.count() << " μs" << std::endl;
+        }
+    });
+    
+    auto totalEnd = std::chrono::high_resolution_clock::now();
+    auto totalDuration = std::chrono::duration_cast<std::chrono::microseconds>(totalEnd - totalStart);
+    
+    std::cerr << "            MSM Batch Total: " << totalDuration.count() << " μs" << std::endl;
+    std::cerr << "            MSM Batch Average per op: " << (totalDuration.count() / nOperations) << " μs" << std::endl;
+}
