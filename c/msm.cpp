@@ -335,46 +335,48 @@ void MSM<Curve, BaseField>::runBatch(std::vector<typename Curve::Point> &results
     
     auto bucketAccumulationStart = std::chrono::high_resolution_clock::now();
     
-    // OPTIMIZATION: Process all operations together in chunks for better cache locality
-    threadPool.parallelFor(0, nChunks, [&] (int begin, int end, int numThread) {
-        for (int j = begin; j < end; j++) {
-            // Process each operation separately to maintain correctness
-            for (uint64_t op = 0; op < nOperations; op++) {
-                const uint64_t nPoints = _nArray[op];
-                typename Curve::PointAffine* bases = _basesArray[op];
-                int32_t* slicedScalars = slicedScalarsArray[op].get();
-                
-                // Get thread-local buckets for this operation
-                typename Curve::Point *buckets = &sharedBucketMatrix[numThread * nBuckets];
-                
-                // Initialize buckets for this operation
-                for (uint64_t i = 0; i < nBuckets; i++) {
-                    g.copy(buckets[i], g.zero());
-                }
-                
-                for (uint64_t i = 0; i < nPoints; i++) {
-                    const int bucketIndex = slicedScalars[i * nChunks + j];
-                    
-                    if (bucketIndex > 0) {
-                        g.add(buckets[bucketIndex - 1], buckets[bucketIndex - 1], bases[i]);
-                    } else if (bucketIndex < 0) {
-                        g.sub(buckets[-bucketIndex - 1], buckets[-bucketIndex - 1], bases[i]);
-                    }
-                }
-                
-                // Accumulate buckets for this operation and chunk
-                typename Curve::Point t, tmp;
-                g.copy(t, buckets[nBuckets - 1]);
-                g.copy(tmp, t);
-                
-                for (int i = nBuckets - 2; i >= 0; i--) {
-                    g.add(tmp, tmp, buckets[i]);
-                    g.add(t, t, tmp);
-                }
-                
-                // Store result for this specific operation
-                chunksArray[op][j] = t;
+    // OPTIMIZATION: True batch MSM - process operations in parallel with shared memory
+    // Each operation maintains mathematical independence while sharing memory allocation
+    threadPool.parallelFor(0, nChunks * nOperations, [&] (int begin, int end, int numThread) {
+        for (int idx = begin; idx < end; idx++) {
+            const int j = idx / nOperations;  // chunk index
+            const int op = idx % nOperations; // operation index
+            
+            const uint64_t nPoints = _nArray[op];
+            typename Curve::PointAffine* bases = _basesArray[op];
+            int32_t* slicedScalars = slicedScalarsArray[op].get();
+            
+            // Get thread-local buckets for this operation
+            typename Curve::Point *buckets = &sharedBucketMatrix[numThread * nBuckets];
+            
+            // Initialize buckets for this operation
+            for (uint64_t i = 0; i < nBuckets; i++) {
+                g.copy(buckets[i], g.zero());
             }
+            
+            // Fill buckets for this specific operation
+            for (uint64_t i = 0; i < nPoints; i++) {
+                const int bucketIndex = slicedScalars[i * nChunks + j];
+                
+                if (bucketIndex > 0) {
+                    g.add(buckets[bucketIndex - 1], buckets[bucketIndex - 1], bases[i]);
+                } else if (bucketIndex < 0) {
+                    g.sub(buckets[-bucketIndex - 1], buckets[-bucketIndex - 1], bases[i]);
+                }
+            }
+            
+            // Accumulate buckets for this operation and chunk
+            typename Curve::Point t, tmp;
+            g.copy(t, buckets[nBuckets - 1]);
+            g.copy(tmp, t);
+            
+            for (int i = nBuckets - 2; i >= 0; i--) {
+                g.add(tmp, tmp, buckets[i]);
+                g.add(t, t, tmp);
+            }
+            
+            // Store result for this specific operation
+            chunksArray[op][j] = t;
         }
     });
     
@@ -417,9 +419,9 @@ void MSM<Curve, BaseField>::runBatch(std::vector<typename Curve::Point> &results
     
     std::cerr << "            MSM Batch Optimizations Applied:" << std::endl;
     std::cerr << "              - Combined scalar slicing across operations" << std::endl;
-    std::cerr << "              - Shared memory allocation (not shared computation)" << std::endl;
-    std::cerr << "              - Parallel processing of operations" << std::endl;
-    std::cerr << "              - Reduced memory allocation overhead" << std::endl;
+    std::cerr << "              - Shared memory allocation with independent computation" << std::endl;
+    std::cerr << "              - Parallel processing of operations and chunks" << std::endl;
+    std::cerr << "              - Better cache locality with shared memory" << std::endl;
 }
 
 // Helper function for batch MSM scalar processing
