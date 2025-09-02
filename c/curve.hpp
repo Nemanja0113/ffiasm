@@ -138,9 +138,9 @@ public:
     void multiMulByScalarMSMBatch(std::vector<Point> &results, 
                                   std::vector<PointAffine*> basesArray, 
                                   std::vector<uint8_t*> scalarsArray,
-                                  std::vector<unsigned int> scalarSizes,
-                                  std::vector<unsigned int> nArray, 
-                                  unsigned int nThreads=0) {
+                                  std::vector<uint64_t> scalarSizes,
+                                  std::vector<uint64_t> nArray, 
+                                  uint64_t nThreads=0) {
         MSM<Curve<BaseField>, BaseField> msm(*this);
         msm.runBatch(results, basesArray, scalarsArray, scalarSizes, nArray, nThreads);
     }
