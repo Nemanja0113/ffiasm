@@ -3,6 +3,13 @@
 
 #include <cstdint>
 #include <vector>
+#include <memory>
+
+// Forward declaration for GPU acceleration
+namespace MSM_GPU {
+    template <typename Curve, typename BaseField>
+    class GPUMSM;
+}
 
 template <typename Curve, typename BaseField>
 class MSM {
@@ -77,12 +84,21 @@ public:
                   std::vector<uint64_t> _scalarSizes,
                   std::vector<uint64_t> _nArray,
                   uint64_t _nThreads=0);
+    
+    // GPU acceleration methods
+    bool enableGPU();
+    bool isGPUEnabled() const;
+    void disableGPU();
 
 private:
     // Helper function for batch MSM scalar processing
     int32_t getBucketIndexForOperation(uint64_t scalarIdx, uint64_t chunkIdx, 
                                       uint8_t* scalars, uint64_t scalarSize, 
                                       uint64_t bitsPerChunk) const;
+    
+    // GPU acceleration
+    std::unique_ptr<MSM_GPU::GPUMSM<Curve, BaseField>> gpuMSM;
+    bool gpuEnabled;
 };
 
 #include "msm.cpp"

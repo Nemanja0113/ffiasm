@@ -5,6 +5,7 @@
 #include <vector>
 #include "msm.hpp"
 #include "misc.hpp"
+#include "msm_gpu.hpp"
 
 template <typename Curve, typename BaseField>
 void MSM<Curve, BaseField>::run(typename Curve::Point &r,
@@ -14,6 +15,13 @@ void MSM<Curve, BaseField>::run(typename Curve::Point &r,
                                 uint64_t _n,
                                 uint64_t _nThreads)
 {
+    // Check if GPU acceleration is available and enabled
+    if (isGPUEnabled()) {
+        std::cerr << "            MSM: Using GPU acceleration" << std::endl;
+        gpuMSM->run(r, _bases, _scalars, _scalarSize, _n, _nThreads);
+        return;
+    }
+    
     auto totalStart = std::chrono::high_resolution_clock::now();
     
     ThreadPool &threadPool = ThreadPool::defaultPool();
@@ -229,6 +237,13 @@ void MSM<Curve, BaseField>::runBatch(std::vector<typename Curve::Point> &results
                                      std::vector<uint64_t> _nArray,
                                      uint64_t _nThreads)
 {
+    // Check if GPU acceleration is available and enabled
+    if (isGPUEnabled()) {
+        std::cerr << "            MSM Batch: Using GPU acceleration" << std::endl;
+        gpuMSM->runBatch(results, _basesArray, _scalarsArray, _scalarSizes, _nArray, _nThreads);
+        return;
+    }
+    
     auto totalStart = std::chrono::high_resolution_clock::now();
     
     ThreadPool &threadPool = ThreadPool::defaultPool();
@@ -443,4 +458,39 @@ int32_t MSM<Curve, BaseField>::getBucketIndexForOperation(uint64_t scalarIdx, ui
     v = v & (((uint64_t)1 << effectiveBitsPerChunk) - 1);
     
     return int32_t(v);
+}
+
+// GPU acceleration methods
+template <typename Curve, typename BaseField>
+bool MSM<Curve, BaseField>::enableGPU() {
+    try {
+        gpuMSM = std::make_unique<MSM_GPU::GPUMSM<Curve, BaseField>>();
+        if (gpuMSM->initialize()) {
+            gpuEnabled = true;
+            std::cerr << "            MSM: GPU acceleration enabled successfully" << std::endl;
+            return true;
+        } else {
+            std::cerr << "            MSM: Failed to initialize GPU acceleration, falling back to CPU" << std::endl;
+            gpuMSM.reset();
+            gpuEnabled = false;
+            return false;
+        }
+    } catch (const std::exception& e) {
+        std::cerr << "            MSM: Exception during GPU initialization: " << e.what() << std::endl;
+        gpuMSM.reset();
+        gpuEnabled = false;
+        return false;
+    }
+}
+
+template <typename Curve, typename BaseField>
+bool MSM<Curve, BaseField>::isGPUEnabled() const {
+    return gpuEnabled && gpuMSM != nullptr;
+}
+
+template <typename Curve, typename BaseField>
+void MSM<Curve, BaseField>::disableGPU() {
+    gpuMSM.reset();
+    gpuEnabled = false;
+    std::cerr << "            MSM: GPU acceleration disabled" << std::endl;
 }
