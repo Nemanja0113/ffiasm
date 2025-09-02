@@ -5,6 +5,8 @@
 #include <vector>
 #include <memory>
 #include <mutex>
+#include <cstdlib>
+#include <string>
 
 // Forward declaration for GPU acceleration
 #ifdef ENABLE_CUDA
@@ -78,9 +80,16 @@ public:
     {
         // Check if GPU is globally enabled for this instance
 #ifdef ENABLE_CUDA
-        gpuEnabled = gpuGloballyEnabled;
-        if (gpuEnabled) {
-            gpuMSM = gpuGlobalMSM.get();
+        // Check environment variable for GPU acceleration
+        const char* gpuEnv = std::getenv("ENABLE_GPU_ACCELERATION");
+        if (gpuEnv && std::string(gpuEnv) == "1") {
+            // Try to enable GPU acceleration automatically
+            if (enableGlobalGPU()) {
+                gpuEnabled = gpuGloballyEnabled;
+                if (gpuEnabled) {
+                    gpuMSM = gpuGlobalMSM.get();
+                }
+            }
         }
 #endif
     }

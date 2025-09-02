@@ -245,6 +245,7 @@ void MSM<Curve, BaseField>::runBatch(std::vector<typename Curve::Point> &results
 {
     // Check if GPU acceleration is available and enabled
 #ifdef ENABLE_CUDA
+    std::cerr << "            MSM Batch??????: Checking if GPU acceleration is enabled" << std::endl;
     if (isGPUEnabled()) {
         std::cerr << "            MSM Batch: Using GPU acceleration" << std::endl;
         gpuMSM->runBatch(results, _basesArray, _scalarsArray, _scalarSizes, _nArray, _nThreads);
