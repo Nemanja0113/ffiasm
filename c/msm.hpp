@@ -77,6 +77,12 @@ public:
                   std::vector<uint64_t> _scalarSizes,
                   std::vector<uint64_t> _nArray,
                   uint64_t _nThreads=0);
+
+private:
+    // Helper function for batch MSM scalar processing
+    int32_t getBucketIndexForOperation(uint64_t scalarIdx, uint64_t chunkIdx, 
+                                      uint8_t* scalars, uint64_t scalarSize, 
+                                      uint64_t bitsPerChunk) const;
 };
 
 #include "msm.cpp"
