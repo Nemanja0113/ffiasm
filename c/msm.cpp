@@ -84,27 +84,6 @@ void MSM<Curve, BaseField>::run(typename Curve::Point &r,
     std::unique_ptr<typename Curve::Point[]> chunks(new typename Curve::Point[nChunks]);
     std::unique_ptr<int32_t[]> slicedScalars(new int32_t[nSlices]);
     
-    // OPTIMIZATION 6: Pre-sort bucket indices for better cache locality
-    auto bucketSortStart = std::chrono::high_resolution_clock::now();
-    std::vector<std::vector<int>> sortedBucketIndices(nChunks);
-    for (int j = 0; j < nChunks; j++) {
-        sortedBucketIndices[j].reserve(nPoints);
-        for (int i = 0; i < nPoints; i++) {
-            int bucketIndex = slicedScalars[i*nChunks + j];
-            if (bucketIndex != 0) {
-                sortedBucketIndices[j].push_back(i);
-            }
-        }
-        // Sort by bucket index for better cache locality
-        std::sort(sortedBucketIndices[j].begin(), sortedBucketIndices[j].end(), 
-                 [&](int a, int b) {
-                     return std::abs(slicedScalars[a*nChunks + j]) < std::abs(slicedScalars[b*nChunks + j]);
-                 });
-    }
-    auto bucketSortEnd = std::chrono::high_resolution_clock::now();
-    auto bucketSortDuration = std::chrono::duration_cast<std::chrono::microseconds>(bucketSortEnd - bucketSortStart);
-    std::cerr << "            MSM Bucket sorting: " << bucketSortDuration.count() << " μs" << std::endl;
-    
     auto memoryAllocEnd = std::chrono::high_resolution_clock::now();
     auto memoryAllocDuration = std::chrono::duration_cast<std::chrono::microseconds>(memoryAllocEnd - memoryAllocStart);
     std::cerr << "            MSM Memory allocation: " << memoryAllocDuration.count() << " μs" << std::endl;
@@ -134,6 +113,27 @@ void MSM<Curve, BaseField>::run(typename Curve::Point &r,
     auto scalarSlicingEnd = std::chrono::high_resolution_clock::now();
     auto scalarSlicingDuration = std::chrono::duration_cast<std::chrono::microseconds>(scalarSlicingEnd - scalarSlicingStart);
     std::cerr << "            MSM Scalar slicing: " << scalarSlicingDuration.count() << " μs" << std::endl;
+
+    // OPTIMIZATION 6: Pre-sort bucket indices for better cache locality (AFTER scalar slicing)
+    auto bucketSortStart = std::chrono::high_resolution_clock::now();
+    std::vector<std::vector<int>> sortedBucketIndices(nChunks);
+    for (int j = 0; j < nChunks; j++) {
+        sortedBucketIndices[j].reserve(nPoints);
+        for (int i = 0; i < nPoints; i++) {
+            int bucketIndex = slicedScalars[i*nChunks + j];
+            if (bucketIndex != 0) {
+                sortedBucketIndices[j].push_back(i);
+            }
+        }
+        // Sort by bucket index for better cache locality
+        std::sort(sortedBucketIndices[j].begin(), sortedBucketIndices[j].end(), 
+                 [&](int a, int b) {
+                     return std::abs(slicedScalars[a*nChunks + j]) < std::abs(slicedScalars[b*nChunks + j]);
+                 });
+    }
+    auto bucketSortEnd = std::chrono::high_resolution_clock::now();
+    auto bucketSortDuration = std::chrono::duration_cast<std::chrono::microseconds>(bucketSortEnd - bucketSortStart);
+    std::cerr << "            MSM Bucket sorting: " << bucketSortDuration.count() << " μs" << std::endl;
 
     auto bucketAccumulationStart = std::chrono::high_resolution_clock::now();
     
@@ -183,17 +183,10 @@ void MSM<Curve, BaseField>::run(typename Curve::Point &r,
             g.copy(t, buckets[nBuckets - 1]);
             g.copy(tmp, t);
 
-            // OPTIMIZATION 4: Early termination for zero buckets + loop unrolling
+            // Original, correct bucket accumulation logic
             for (int i = nBuckets - 2; i >= 0 ; i--) {
-                // Skip zero buckets to avoid unnecessary operations
-                if (!g.isZero(buckets[i])) {
-                    g.add(tmp, tmp, buckets[i]);
-                    g.add(t, t, tmp);
-                } else {
-                    // If bucket is zero, just double tmp
-                    g.dbl(tmp, tmp);
-                    g.add(t, t, tmp);
-                }
+                g.add(tmp, tmp, buckets[i]);
+                g.add(t, t, tmp);
             }
             
             auto bucketAccumEnd = std::chrono::high_resolution_clock::now();
@@ -245,6 +238,5 @@ void MSM<Curve, BaseField>::run(typename Curve::Point &r,
     std::cerr << "            MSM Optimizations Applied:" << std::endl;
     std::cerr << "              - Adaptive chunk sizing" << std::endl;
     std::cerr << "              - Cache-optimized bucket sorting" << std::endl;
-    std::cerr << "              - Early termination for zero buckets" << std::endl;
     std::cerr << "              - Detailed sub-phase timing" << std::endl;
 }
