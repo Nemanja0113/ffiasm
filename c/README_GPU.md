@@ -42,7 +42,7 @@ This directory contains GPU acceleration support for Multi-Scalar Multiplication
 
 ## 🛠️ Building
 
-### Option 1: Standalone Build
+### Option 1: Standalone Build with CUDA
 ```bash
 cd rapidsnark/depends/ffiasm/c
 mkdir build && cd build
@@ -50,7 +50,15 @@ cmake ..
 make -j4
 ```
 
-### Option 2: Integrated with Rapidsnark
+### Option 2: Standalone Build without CUDA
+```bash
+cd rapidsnark/depends/ffiasm/c
+mkdir build && cd build
+cmake -f ../CMakeLists_no_cuda.txt ..
+make -j4
+```
+
+### Option 3: Integrated with Rapidsnark
 ```bash
 cd rapidsnark
 mkdir build && cd build
@@ -114,6 +122,12 @@ The GPU implementation provides detailed timing information:
 1. **Placeholder Kernels**: The CUDA kernels are currently simplified placeholders
 2. **Curve Types**: Need to be adapted to your specific elliptic curve implementation
 3. **Memory Management**: GPU memory allocation is basic and could be optimized
+
+### Conditional Compilation
+The GPU acceleration is conditionally compiled using the `ENABLE_CUDA` flag:
+- **With CUDA**: Full GPU acceleration support
+- **Without CUDA**: Stub implementations that gracefully fall back to CPU
+- **Automatic Detection**: GPU methods are always available but return appropriate fallback behavior
 
 ### Future Improvements
 1. **Full Elliptic Curve Arithmetic**: Implement proper field arithmetic in CUDA

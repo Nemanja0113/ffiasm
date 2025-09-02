@@ -5,7 +5,11 @@
 #include <vector>
 #include "msm.hpp"
 #include "misc.hpp"
+
+// GPU acceleration support (conditional)
+#ifdef ENABLE_CUDA
 #include "msm_gpu.hpp"
+#endif
 
 template <typename Curve, typename BaseField>
 void MSM<Curve, BaseField>::run(typename Curve::Point &r,
@@ -16,11 +20,13 @@ void MSM<Curve, BaseField>::run(typename Curve::Point &r,
                                 uint64_t _nThreads)
 {
     // Check if GPU acceleration is available and enabled
+#ifdef ENABLE_CUDA
     if (isGPUEnabled()) {
         std::cerr << "            MSM: Using GPU acceleration" << std::endl;
         gpuMSM->run(r, _bases, _scalars, _scalarSize, _n, _nThreads);
         return;
     }
+#endif
     
     auto totalStart = std::chrono::high_resolution_clock::now();
     
@@ -238,11 +244,13 @@ void MSM<Curve, BaseField>::runBatch(std::vector<typename Curve::Point> &results
                                      uint64_t _nThreads)
 {
     // Check if GPU acceleration is available and enabled
+#ifdef ENABLE_CUDA
     if (isGPUEnabled()) {
         std::cerr << "            MSM Batch: Using GPU acceleration" << std::endl;
         gpuMSM->runBatch(results, _basesArray, _scalarsArray, _scalarSizes, _nArray, _nThreads);
         return;
     }
+#endif
     
     auto totalStart = std::chrono::high_resolution_clock::now();
     
@@ -461,10 +469,11 @@ int32_t MSM<Curve, BaseField>::getBucketIndexForOperation(uint64_t scalarIdx, ui
 }
 
 // GPU acceleration methods
+#ifdef ENABLE_CUDA
 template <typename Curve, typename BaseField>
 bool MSM<Curve, BaseField>::enableGPU() {
     try {
-        gpuMSM = std::make_unique<MSM_GPU::GPUMSM<Curve, BaseField>>();
+        gpuMSM = std::unique_ptr<MSM_GPU::GPUMSM<Curve, BaseField>>(new MSM_GPU::GPUMSM<Curve, BaseField>());
         if (gpuMSM->initialize()) {
             gpuEnabled = true;
             std::cerr << "            MSM: GPU acceleration enabled successfully" << std::endl;
@@ -494,3 +503,21 @@ void MSM<Curve, BaseField>::disableGPU() {
     gpuEnabled = false;
     std::cerr << "            MSM: GPU acceleration disabled" << std::endl;
 }
+#else
+// GPU acceleration not available - provide stub implementations
+template <typename Curve, typename BaseField>
+bool MSM<Curve, BaseField>::enableGPU() {
+    std::cerr << "            MSM: GPU acceleration not compiled in" << std::endl;
+    return false;
+}
+
+template <typename Curve, typename BaseField>
+bool MSM<Curve, BaseField>::isGPUEnabled() const {
+    return false;
+}
+
+template <typename Curve, typename BaseField>
+void MSM<Curve, BaseField>::disableGPU() {
+    std::cerr << "            MSM: GPU acceleration not compiled in" << std::endl;
+}
+#endif

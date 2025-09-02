@@ -1,7 +1,32 @@
 #include "msm_gpu.hpp"
-#include <cuda_runtime.h>
 #include <iostream>
 #include <chrono>
+
+// Include CUDA runtime for memory operations and synchronization
+#include <cuda_runtime.h>
+
+// Forward declarations for CUDA functions to avoid including cuda_runtime.h in C++ file
+extern "C" {
+    void scalarSlicingKernel(int32_t* slicedScalars, uint8_t* scalars, 
+                             uint64_t nPoints, uint64_t nChunks, uint64_t nBuckets,
+                             uint64_t bitsPerChunk, uint64_t scalarSize);
+    void bucketFillingKernel(void* buckets, void* bases, int32_t* slicedScalars,
+                             uint64_t nPoints, uint64_t nChunks, uint64_t nBuckets);
+    void bucketAccumulationKernel(void* chunks, void* buckets, 
+                                  uint64_t nChunks, uint64_t nBuckets);
+    void finalAccumulationKernel(void* result, void* chunks, 
+                                 uint64_t nChunks, uint64_t bitsPerChunk);
+}
+
+// CUDA error checking macro for C++ file
+#define CUDA_CHECK(call) do { \
+    cudaError_t err = call; \
+    if (err != cudaSuccess) { \
+        std::cerr << "CUDA error at " << __FILE__ << ":" << __LINE__ << " - " \
+                  << cudaGetErrorString(err) << std::endl; \
+        return false; \
+    } \
+} while(0)
 
 namespace MSM_GPU {
 
@@ -220,6 +245,7 @@ void GPUMSM<Curve, BaseField>::runBatch(std::vector<typename Curve::Point> &resu
 
 // Explicit template instantiations for common curve types
 // Note: These would need to be adapted based on the actual curve types used in the project
-template class GPUMSM<void, void>; // Placeholder - replace with actual curve types
+// For now, we'll let the compiler handle template instantiation automatically
+// template class GPUMSM<void, void>; // Placeholder - replace with actual curve types
 
 } // namespace MSM_GPU

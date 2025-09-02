@@ -6,10 +6,12 @@
 #include <memory>
 
 // Forward declaration for GPU acceleration
+#ifdef ENABLE_CUDA
 namespace MSM_GPU {
     template <typename Curve, typename BaseField>
     class GPUMSM;
 }
+#endif
 
 template <typename Curve, typename BaseField>
 class MSM {
@@ -68,7 +70,11 @@ private:
     }
 
 public:
-    MSM(Curve &_g): g(_g) {}
+    MSM(Curve &_g): g(_g), gpuEnabled(false) 
+#ifdef ENABLE_CUDA
+        , gpuMSM(nullptr)
+#endif
+    {}
 
     void run(typename Curve::Point &r,
              typename Curve::PointAffine *_bases,
@@ -86,9 +92,15 @@ public:
                   uint64_t _nThreads=0);
     
     // GPU acceleration methods
+#ifdef ENABLE_CUDA
     bool enableGPU();
     bool isGPUEnabled() const;
     void disableGPU();
+#else
+    bool enableGPU();
+    bool isGPUEnabled() const;
+    void disableGPU();
+#endif
 
 private:
     // Helper function for batch MSM scalar processing
@@ -97,8 +109,12 @@ private:
                                       uint64_t bitsPerChunk) const;
     
     // GPU acceleration
+#ifdef ENABLE_CUDA
     std::unique_ptr<MSM_GPU::GPUMSM<Curve, BaseField>> gpuMSM;
     bool gpuEnabled;
+#else
+    bool gpuEnabled;
+#endif
 };
 
 #include "msm.cpp"
