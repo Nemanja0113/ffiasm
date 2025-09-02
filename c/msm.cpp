@@ -114,26 +114,7 @@ void MSM<Curve, BaseField>::run(typename Curve::Point &r,
     auto scalarSlicingDuration = std::chrono::duration_cast<std::chrono::microseconds>(scalarSlicingEnd - scalarSlicingStart);
     std::cerr << "            MSM Scalar slicing: " << scalarSlicingDuration.count() << " μs" << std::endl;
 
-    // OPTIMIZATION 6: Pre-sort bucket indices for better cache locality (AFTER scalar slicing)
-    auto bucketSortStart = std::chrono::high_resolution_clock::now();
-    std::vector<std::vector<int>> sortedBucketIndices(nChunks);
-    for (int j = 0; j < nChunks; j++) {
-        sortedBucketIndices[j].reserve(nPoints);
-        for (int i = 0; i < nPoints; i++) {
-            int bucketIndex = slicedScalars[i*nChunks + j];
-            if (bucketIndex != 0) {
-                sortedBucketIndices[j].push_back(i);
-            }
-        }
-        // Sort by bucket index for better cache locality
-        std::sort(sortedBucketIndices[j].begin(), sortedBucketIndices[j].end(), 
-                 [&](int a, int b) {
-                     return std::abs(slicedScalars[a*nChunks + j]) < std::abs(slicedScalars[b*nChunks + j]);
-                 });
-    }
-    auto bucketSortEnd = std::chrono::high_resolution_clock::now();
-    auto bucketSortDuration = std::chrono::duration_cast<std::chrono::microseconds>(bucketSortEnd - bucketSortStart);
-    std::cerr << "            MSM Bucket sorting: " << bucketSortDuration.count() << " μs" << std::endl;
+    // Bucket sorting removed - it was causing performance regression
 
     auto bucketAccumulationStart = std::chrono::high_resolution_clock::now();
     
@@ -157,17 +138,16 @@ void MSM<Curve, BaseField>::run(typename Curve::Point &r,
                 std::cerr << "              Bucket zero init: " << bucketZeroDuration.count() << " μs" << std::endl;
             }
 
-            // OPTIMIZATION 2: Use sorted bucket indices for better cache locality
+            // Original, simple bucket filling approach
             auto bucketFillStart = std::chrono::high_resolution_clock::now();
             
-            // Use sorted indices for better memory access patterns
-            for (int idx : sortedBucketIndices[j]) {
-                const int bucketIndex = slicedScalars[idx*nChunks + j];
+            for (int i = 0; i < nPoints; i++) {
+                const int bucketIndex = slicedScalars[i*nChunks + j];
                 
                 if (bucketIndex > 0) {
-                    g.add(buckets[bucketIndex-1], buckets[bucketIndex-1], _bases[idx]);
+                    g.add(buckets[bucketIndex-1], buckets[bucketIndex-1], _bases[i]);
                 } else if (bucketIndex < 0) {
-                    g.sub(buckets[-bucketIndex-1], buckets[-bucketIndex-1], _bases[idx]);
+                    g.sub(buckets[-bucketIndex-1], buckets[-bucketIndex-1], _bases[i]);
                 }
             }
             auto bucketFillEnd = std::chrono::high_resolution_clock::now();
@@ -237,6 +217,5 @@ void MSM<Curve, BaseField>::run(typename Curve::Point &r,
     // Print optimization summary
     std::cerr << "            MSM Optimizations Applied:" << std::endl;
     std::cerr << "              - Adaptive chunk sizing" << std::endl;
-    std::cerr << "              - Cache-optimized bucket sorting" << std::endl;
     std::cerr << "              - Detailed sub-phase timing" << std::endl;
 }
