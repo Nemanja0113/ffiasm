@@ -1,6 +1,5 @@
 #ifndef MSM_HPP
 #define MSM_HPP
-#define ENABLE_CUDA
 
 #include <cstdint>
 #include <vector>
