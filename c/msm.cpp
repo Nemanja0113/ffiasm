@@ -472,24 +472,59 @@ int32_t MSM<Curve, BaseField>::getBucketIndexForOperation(uint64_t scalarIdx, ui
 #ifdef ENABLE_CUDA
 template <typename Curve, typename BaseField>
 bool MSM<Curve, BaseField>::enableGPU() {
+    // Instance-specific GPU enable (for backward compatibility)
     try {
         gpuMSM = std::unique_ptr<MSM_GPU::GPUMSM<Curve, BaseField>>(new MSM_GPU::GPUMSM<Curve, BaseField>());
         if (gpuMSM->initialize()) {
             gpuEnabled = true;
-            std::cerr << "            MSM: GPU acceleration enabled successfully" << std::endl;
+            std::cerr << "            MSM: Instance GPU acceleration enabled successfully" << std::endl;
             return true;
         } else {
-            std::cerr << "            MSM: Failed to initialize GPU acceleration, falling back to CPU" << std::endl;
+            std::cerr << "            MSM: Failed to initialize instance GPU acceleration, falling back to CPU" << std::endl;
             gpuMSM.reset();
             gpuEnabled = false;
             return false;
         }
     } catch (const std::exception& e) {
-        std::cerr << "            MSM: Exception during GPU initialization: " << e.what() << std::endl;
+        std::cerr << "            MSM: Exception during instance GPU initialization: " << e.what() << std::endl;
         gpuMSM.reset();
         gpuEnabled = false;
         return false;
     }
+}
+
+template <typename Curve, typename BaseField>
+bool MSM<Curve, BaseField>::enableGlobalGPU() {
+    std::call_once(gpuInitFlag, [&]() {
+        try {
+            gpuGlobalMSM = std::unique_ptr<MSM_GPU::GPUMSM<Curve, BaseField>>(new MSM_GPU::GPUMSM<Curve, BaseField>());
+            if (gpuGlobalMSM->initialize()) {
+                gpuGloballyEnabled = true;
+                std::cerr << "            MSM: Global GPU acceleration enabled successfully" << std::endl;
+            } else {
+                std::cerr << "            MSM: Failed to initialize global GPU acceleration, falling back to CPU" << std::endl;
+                gpuGlobalMSM.reset();
+                gpuGloballyEnabled = false;
+            }
+        } catch (const std::exception& e) {
+            std::cerr << "            MSM: Exception during global GPU initialization: " << e.what() << std::endl;
+            gpuGlobalMSM.reset();
+            gpuGloballyEnabled = false;
+        }
+    });
+    return gpuGloballyEnabled;
+}
+
+template <typename Curve, typename BaseField>
+bool MSM<Curve, BaseField>::isGlobalGPUEnabled() {
+    return gpuGloballyEnabled;
+}
+
+template <typename Curve, typename BaseField>
+void MSM<Curve, BaseField>::disableGlobalGPU() {
+    gpuGlobalMSM.reset();
+    gpuGloballyEnabled = false;
+    std::cerr << "            MSM: Global GPU acceleration disabled" << std::endl;
 }
 
 template <typename Curve, typename BaseField>
@@ -519,5 +554,21 @@ bool MSM<Curve, BaseField>::isGPUEnabled() const {
 template <typename Curve, typename BaseField>
 void MSM<Curve, BaseField>::disableGPU() {
     std::cerr << "            MSM: GPU acceleration not compiled in" << std::endl;
+}
+
+template <typename Curve, typename BaseField>
+bool MSM<Curve, BaseField>::enableGlobalGPU() {
+    std::cerr << "            MSM: Global GPU acceleration not compiled in" << std::endl;
+    return false;
+}
+
+template <typename Curve, typename BaseField>
+bool MSM<Curve, BaseField>::isGlobalGPUEnabled() {
+    return false;
+}
+
+template <typename Curve, typename BaseField>
+void MSM<Curve, BaseField>::disableGlobalGPU() {
+    std::cerr << "            MSM: Global GPU acceleration not compiled in" << std::endl;
 }
 #endif

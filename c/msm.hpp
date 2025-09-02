@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <vector>
 #include <memory>
+#include <mutex>
 
 // Forward declaration for GPU acceleration
 #ifdef ENABLE_CUDA
@@ -74,7 +75,15 @@ public:
 #ifdef ENABLE_CUDA
         , gpuMSM(nullptr)
 #endif
-    {}
+    {
+        // Check if GPU is globally enabled for this instance
+#ifdef ENABLE_CUDA
+        gpuEnabled = gpuGloballyEnabled;
+        if (gpuEnabled) {
+            gpuMSM = gpuGlobalMSM.get();
+        }
+#endif
+    }
 
     void run(typename Curve::Point &r,
              typename Curve::PointAffine *_bases,
@@ -96,10 +105,20 @@ public:
     bool enableGPU();
     bool isGPUEnabled() const;
     void disableGPU();
+    
+    // Static GPU control methods
+    static bool enableGlobalGPU();
+    static bool isGlobalGPUEnabled();
+    static void disableGlobalGPU();
 #else
     bool enableGPU();
     bool isGPUEnabled() const;
     void disableGPU();
+    
+    // Static GPU control methods (stubs)
+    static bool enableGlobalGPU();
+    static bool isGlobalGPUEnabled();
+    static void disableGlobalGPU();
 #endif
 
 private:
@@ -112,10 +131,27 @@ private:
 #ifdef ENABLE_CUDA
     std::unique_ptr<MSM_GPU::GPUMSM<Curve, BaseField>> gpuMSM;
     bool gpuEnabled;
+    
+    // Static GPU state shared across all MSM instances
+    static bool gpuGloballyEnabled;
+    static std::unique_ptr<MSM_GPU::GPUMSM<Curve, BaseField>> gpuGlobalMSM;
+    static std::once_flag gpuInitFlag;
 #else
     bool gpuEnabled;
 #endif
 };
+
+// Static member definitions
+#ifdef ENABLE_CUDA
+template <typename Curve, typename BaseField>
+bool MSM<Curve, BaseField>::gpuGloballyEnabled = false;
+
+template <typename Curve, typename BaseField>
+std::unique_ptr<MSM_GPU::GPUMSM<Curve, BaseField>> MSM<Curve, BaseField>::gpuGlobalMSM = nullptr;
+
+template <typename Curve, typename BaseField>
+std::once_flag MSM<Curve, BaseField>::gpuInitFlag;
+#endif
 
 #include "msm.cpp"
 

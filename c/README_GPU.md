@@ -68,22 +68,44 @@ make -j4
 
 ## 📖 Usage
 
-### Basic GPU Acceleration
+### Global GPU Acceleration (Recommended)
 ```cpp
-#include "msm_gpu.hpp"
+#include "msm.hpp"
+#include "curve.hpp"
+
+// Enable GPU acceleration globally ONCE at program startup
+// This will be shared across all MSM instances
+if (MSM<Curve, BaseField>::enableGlobalGPU()) {
+    std::cout << "Global GPU acceleration enabled!" << std::endl;
+} else {
+    std::cout << "Global GPU acceleration failed, using CPU" << std::endl;
+}
+
+// All subsequent MSM operations will automatically use GPU
+MSM<Curve, BaseField> msm1(curve);
+msm1.run(result1, bases1, scalars1, scalarSize1, n1, nThreads);
+
+MSM<Curve, BaseField> msm2(curve);
+msm2.run(result2, bases2, scalars2, scalarSize2, n2, nThreads);
+```
+
+### Instance-Specific GPU Acceleration (Legacy)
+```cpp
+#include "msm.hpp"
+#include "curve.hpp"
 
 // Create MSM instance
 MSM<Curve, BaseField> msm(curve);
 
-// Enable GPU acceleration
+// Enable GPU acceleration for this specific instance
 if (msm.enableGPU()) {
-    std::cout << "GPU acceleration enabled!" << std::endl;
+    std::cout << "Instance GPU acceleration enabled!" << std::endl;
 } else {
-    std::cout << "Falling back to CPU" << std::endl;
+    std::cout << "Instance GPU acceleration failed, using CPU" << std::endl;
 }
 
-// Use normally - GPU acceleration is automatic
-msm.run(result, bases, scalars, scalarSize, nPoints);
+// Use MSM - GPU will be used automatically if enabled
+msm.run(result, bases, scalars, scalarSize, n, nThreads);
 ```
 
 ### Batch MSM with GPU
@@ -117,6 +139,21 @@ The GPU implementation provides detailed timing information:
 ```
 
 ## ⚠️ Important Notes
+
+### Global vs Instance GPU Control
+The GPU acceleration system provides two approaches:
+
+1. **Global GPU Control (Recommended)**
+   - Call `MSM<Curve, BaseField>::enableGlobalGPU()` once at program startup
+   - All MSM instances automatically use GPU acceleration
+   - Shared GPU context across all operations
+   - Best for production use
+
+2. **Instance GPU Control (Legacy)**
+   - Call `msm.enableGPU()` on each MSM instance
+   - Each instance manages its own GPU context
+   - More flexible but less efficient
+   - Useful for testing or special cases
 
 ### Current Limitations
 1. **Placeholder Kernels**: The CUDA kernels are currently simplified placeholders
