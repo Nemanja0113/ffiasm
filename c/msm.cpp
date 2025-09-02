@@ -1,6 +1,8 @@
 #include <memory>
 #include <chrono>
 #include <iostream>
+#include <algorithm>
+#include <vector>
 #include "msm.hpp"
 #include "misc.hpp"
 
@@ -30,10 +32,10 @@ void MSM<Curve, BaseField>::run(typename Curve::Point &r,
     // OPTIMIZATION 7: Adaptive chunk size based on input characteristics
     if (nPoints > 1000000) {
         // For very large inputs, use larger chunks to reduce memory pressure
-        bitsPerChunk = std::min(16ULL, calcBitsPerChunk(nPoints, scalarSize) + 2);
+        bitsPerChunk = std::min<uint64_t>(16, calcBitsPerChunk(nPoints, scalarSize) + 2);
     } else if (nPoints > 100000) {
         // For large inputs, slightly increase chunk size
-        bitsPerChunk = std::min(16ULL, calcBitsPerChunk(nPoints, scalarSize) + 1);
+        bitsPerChunk = std::min<uint64_t>(16, calcBitsPerChunk(nPoints, scalarSize) + 1);
     } else {
         // For smaller inputs, use calculated optimal size
         bitsPerChunk = calcBitsPerChunk(nPoints, scalarSize);
