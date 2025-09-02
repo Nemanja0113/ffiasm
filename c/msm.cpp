@@ -23,7 +23,14 @@ void MSM<Curve, BaseField>::run(typename Curve::Point &r,
 #ifdef ENABLE_CUDA
     if (isGPUEnabled()) {
         std::cerr << "            MSM: Using GPU acceleration" << std::endl;
-        gpuMSM->run(r, _bases, _scalars, _scalarSize, _n, _nThreads);
+        // Use global GPU if local one is not available
+        if (gpuMSM != nullptr) {
+            gpuMSM->run(r, _bases, _scalars, _scalarSize, _n, _nThreads);
+        } else if (gpuGloballyEnabled && gpuGlobalMSM != nullptr) {
+            gpuGlobalMSM->run(r, _bases, _scalars, _scalarSize, _n, _nThreads);
+        } else {
+            std::cerr << "            MSM: GPU enabled but no GPU context available, falling back to CPU" << std::endl;
+        }
         return;
     }
 #endif
@@ -245,10 +252,17 @@ void MSM<Curve, BaseField>::runBatch(std::vector<typename Curve::Point> &results
 {
     // Check if GPU acceleration is available and enabled
 #ifdef ENABLE_CUDA
-    std::cerr << "            MSM Batch??????: Checking if GPU acceleration is enabled" << std::endl;
+    std::cerr << "            MSM Batch: Checking if GPU acceleration is enabled" << std::endl;
     if (isGPUEnabled()) {
         std::cerr << "            MSM Batch: Using GPU acceleration" << std::endl;
-        gpuMSM->runBatch(results, _basesArray, _scalarsArray, _scalarSizes, _nArray, _nThreads);
+        // Use global GPU if local one is not available
+        if (gpuMSM != nullptr) {
+            gpuMSM->runBatch(results, _basesArray, _scalarsArray, _scalarSizes, _nArray, _nThreads);
+        } else if (gpuGloballyEnabled && gpuGlobalMSM != nullptr) {
+            gpuGlobalMSM->runBatch(results, _basesArray, _scalarsArray, _scalarSizes, _nArray, _nThreads);
+        } else {
+            std::cerr << "            MSM Batch: GPU enabled but no GPU context available, falling back to CPU" << std::endl;
+        }
         return;
     }
 #endif
@@ -530,7 +544,7 @@ void MSM<Curve, BaseField>::disableGlobalGPU() {
 
 template <typename Curve, typename BaseField>
 bool MSM<Curve, BaseField>::isGPUEnabled() const {
-    return gpuEnabled && gpuMSM != nullptr;
+    return gpuEnabled && (gpuMSM != nullptr || gpuGloballyEnabled);
 }
 
 template <typename Curve, typename BaseField>

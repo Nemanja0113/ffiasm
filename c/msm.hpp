@@ -87,9 +87,7 @@ public:
             // Try to enable GPU acceleration automatically
             if (enableGlobalGPU()) {
                 gpuEnabled = gpuGloballyEnabled;
-                if (gpuEnabled) {
-                    gpuMSM = gpuGlobalMSM.get();
-                }
+                // Note: gpuMSM will be nullptr, but we'll use global GPU state
             }
         }
 #endif
