@@ -4,6 +4,16 @@
 #include <iostream>
 #include <cuda_runtime.h>
 
+// Forward declaration of GPU MSM function
+extern "C" void gpu_msm_advanced(
+    void* result,
+    const void* bases,
+    const uint8_t* scalars,
+    uint64_t scalarSize,
+    uint64_t nPoints,
+    uint64_t nThreads
+);
+
 namespace ffiasm_gpu {
 
 // Static member definitions
@@ -104,15 +114,6 @@ bool GPUIntegration::runGPUMSM<AltBn128::Engine::G1, AltBn128::Engine::F1>(
     std::cerr << "ffiasm GPU: Running GPU MSM for " << n << " G1 points" << std::endl;
     
     // Use the advanced GPU MSM implementation
-    extern "C" void gpu_msm_advanced(
-        AltBn128::Engine::G1Point* result,
-        const AltBn128::Engine::G1PointAffine* bases,
-        const uint8_t* scalars,
-        uint64_t scalarSize,
-        uint64_t nPoints,
-        uint64_t nThreads
-    );
-    
     gpu_msm_advanced(&result, bases, scalars, scalarSize, n, nThreads);
     return true;
 }
