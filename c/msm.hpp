@@ -2,6 +2,10 @@
 #define MSM_HPP
 
 #include <cstdint>
+#include <iostream>
+
+// Include ffiasm GPU integration
+#include "gpu/gpu_integration.hpp"
 
 template <typename Curve, typename BaseField>
 class MSM {
@@ -58,6 +62,36 @@ private:
 
         return uint64_t(v);
     }
+
+    // GPU acceleration method
+    bool shouldUseGPU(uint64_t n) const {
+        return ffiasm_gpu::GPUIntegration::isGPUAccelerationAvailable() && 
+               n >= ffiasm_gpu::GPUIntegration::getMinPointsForGPU();
+    }
+
+    void runGPU(typename Curve::Point &r,
+                typename Curve::PointAffine *_bases,
+                uint8_t* _scalars,
+                uint64_t _scalarSize,
+                uint64_t _n,
+                uint64_t _nThreads) {
+        std::cerr << "MSM: Using GPU acceleration for " << _n << " points" << std::endl;
+        bool gpu_success = ffiasm_gpu::GPUIntegration::runGPUMSM<Curve, BaseField>(
+            r, _bases, _scalars, _scalarSize, _n, _nThreads);
+        
+        if (!gpu_success) {
+            std::cerr << "MSM: GPU acceleration failed, falling back to CPU" << std::endl;
+            // Fall back to CPU implementation
+            runCPU(r, _bases, _scalars, _scalarSize, _n, _nThreads);
+        }
+    }
+
+    void runCPU(typename Curve::Point &r,
+                typename Curve::PointAffine *_bases,
+                uint8_t* _scalars,
+                uint64_t _scalarSize,
+                uint64_t _n,
+                uint64_t _nThreads);
 
 public:
     MSM(Curve &_g): g(_g) {}
