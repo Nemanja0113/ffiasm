@@ -16,6 +16,7 @@
 #include <cuda.h>
 #include <stdint.h>
 #include <stdio.h>
+#include "gpu_common.hpp"
 
 // Additional compatibility fixes
 #ifdef __GNUC__
@@ -24,208 +25,8 @@
 #pragma GCC diagnostic ignored "-Wformat-truncation"
 #endif
 
-// Correct AltBn128 structure definitions matching the actual implementation
-#define Fq_N64 4
+// MSM Algorithm Implementation (unique kernels)
 
-typedef uint64_t FqRawElement[Fq_N64];
-
-typedef struct __attribute__((__packed__)) {
-    int32_t shortVal;
-    uint32_t type;
-    FqRawElement longVal;
-} FqElement;
-
-// G1 structures
-struct G1PointAffine {
-    FqElement x;
-    FqElement y;
-};
-
-struct G1Point {
-    FqElement x;
-    FqElement y;
-    FqElement z;
-    FqElement zz;
-    FqElement zzz;
-};
-
-// AltBn128 field prime: p = 21888242871839275222246405745257275088548364400416034343698204186575808495617
-// In little-endian format for 4x64-bit words
-__constant__ uint64_t Fq_prime[4] = {
-    0x3c208c16d87cfd47,  // p[0] (least significant)
-    0x97816a916871ca8d,  // p[1]
-    0xb85045b68181585d,  // p[2] 
-    0x30644e72e131a029   // p[3] (most significant)
-};
-
-// Montgomery reduction constant
-__constant__ uint64_t Fq_np = 0x87d20782e4866389;
-
-// Field arithmetic functions (matching CPU implementation)
-__device__ __forceinline__ bool fq_is_zero(const FqElement* a) {
-    return (a->longVal[0] == 0 && a->longVal[1] == 0 && 
-            a->longVal[2] == 0 && a->longVal[3] == 0);
-}
-
-__device__ __forceinline__ void fq_zero(FqElement* a) {
-    a->shortVal = 0;
-    a->type = 0x00000000; // Fq_SHORT
-    a->longVal[0] = 0;
-    a->longVal[1] = 0;
-    a->longVal[2] = 0;
-    a->longVal[3] = 0;
-}
-
-__device__ __forceinline__ void fq_one(FqElement* a) {
-    a->shortVal = 1;
-    a->type = 0x00000000; // Fq_SHORT
-    a->longVal[0] = 1;
-    a->longVal[1] = 0;
-    a->longVal[2] = 0;
-    a->longVal[3] = 0;
-}
-
-__device__ __forceinline__ void fq_copy(FqElement* r, const FqElement* a) {
-    r->shortVal = a->shortVal;
-    r->type = a->type;
-    r->longVal[0] = a->longVal[0];
-    r->longVal[1] = a->longVal[1];
-    r->longVal[2] = a->longVal[2];
-    r->longVal[3] = a->longVal[3];
-}
-
-// Field addition with Montgomery reduction
-__device__ __forceinline__ void fq_add(FqElement* r, const FqElement* a, const FqElement* b) {
-    uint64_t carry = 0;
-    uint64_t temp[5] = {0};
-    
-    // Add a + b
-    for (int i = 0; i < 4; i++) {
-        uint64_t sum = a->longVal[i] + b->longVal[i] + carry;
-        temp[i] = sum;
-        carry = (sum < a->longVal[i]) ? 1 : 0;
-    }
-    temp[4] = carry;
-    
-    // Check if result >= p
-    bool need_reduction = (temp[4] > 0) || 
-                         (temp[3] > Fq_prime[3]) ||
-                         (temp[3] == Fq_prime[3] && temp[2] > Fq_prime[2]) ||
-                         (temp[3] == Fq_prime[3] && temp[2] == Fq_prime[2] && temp[1] > Fq_prime[1]) ||
-                         (temp[3] == Fq_prime[3] && temp[2] == Fq_prime[2] && temp[1] == Fq_prime[1] && temp[0] >= Fq_prime[0]);
-    
-    if (need_reduction) {
-        // Subtract p
-        carry = 0;
-        for (int i = 0; i < 4; i++) {
-            uint64_t diff = temp[i] - Fq_prime[i] - carry;
-            temp[i] = diff;
-            carry = (temp[i] > diff) ? 1 : 0;
-        }
-    }
-    
-    // Store result
-    r->shortVal = 0;
-    r->type = 0x80000000; // Fq_LONG
-    r->longVal[0] = temp[0];
-    r->longVal[1] = temp[1];
-    r->longVal[2] = temp[2];
-    r->longVal[3] = temp[3];
-}
-
-// Field subtraction with Montgomery reduction
-__device__ __forceinline__ void fq_sub(FqElement* r, const FqElement* a, const FqElement* b) {
-    uint64_t borrow = 0;
-    uint64_t temp[4];
-    
-    // Subtract a - b
-    for (int i = 0; i < 4; i++) {
-        uint64_t diff = a->longVal[i] - b->longVal[i] - borrow;
-        temp[i] = diff;
-        borrow = (a->longVal[i] < b->longVal[i] + borrow) ? 1 : 0;
-    }
-    
-    // If result is negative, add p
-    if (borrow) {
-        uint64_t carry = 0;
-        for (int i = 0; i < 4; i++) {
-            uint64_t sum = temp[i] + Fq_prime[i] + carry;
-            temp[i] = sum;
-            carry = (sum < temp[i]) ? 1 : 0;
-        }
-    }
-    
-    // Store result
-    r->shortVal = 0;
-    r->type = 0x80000000; // Fq_LONG
-    r->longVal[0] = temp[0];
-    r->longVal[1] = temp[1];
-    r->longVal[2] = temp[2];
-    r->longVal[3] = temp[3];
-}
-
-// Simplified field multiplication (for now - can be optimized later)
-__device__ __forceinline__ void fq_mul(FqElement* r, const FqElement* a, const FqElement* b) {
-    // For now, use a simple implementation
-    // This should be replaced with proper Montgomery multiplication
-    uint64_t temp[8] = {0};
-    
-    // Multiply a * b
-    for (int i = 0; i < 4; i++) {
-        for (int j = 0; j < 4; j++) {
-            uint64_t product = a->longVal[i] * b->longVal[j];
-            uint64_t carry = 0;
-            
-            for (int k = 0; k < 4; k++) {
-                if (i + j + k < 8) {
-                    uint64_t sum = temp[i + j + k] + (product & 0xFFFFFFFFFFFFFFFFULL) + carry;
-                    temp[i + j + k] = sum;
-                    carry = (product >> 32) + (sum >> 32);
-                    product >>= 32;
-                }
-            }
-        }
-    }
-    
-    // Reduce modulo p (simplified)
-    // This is a placeholder - proper Montgomery reduction should be implemented
-    r->shortVal = 0;
-    r->type = 0x80000000; // Fq_LONG
-    r->longVal[0] = temp[0];
-    r->longVal[1] = temp[1];
-    r->longVal[2] = temp[2];
-    r->longVal[3] = temp[3];
-}
-
-// Point operations
-__device__ __forceinline__ bool point_is_zero(const G1Point* a) {
-    return fq_is_zero(&a->z);
-}
-
-__device__ __forceinline__ void point_zero(G1Point* a) {
-    fq_zero(&a->x);
-    fq_zero(&a->y);
-    fq_zero(&a->z);
-    fq_zero(&a->zz);
-    fq_zero(&a->zzz);
-}
-
-__device__ __forceinline__ void point_copy(G1Point* r, const G1Point* a) {
-    fq_copy(&r->x, &a->x);
-    fq_copy(&r->y, &a->y);
-    fq_copy(&r->z, &a->z);
-    fq_copy(&r->zz, &a->zz);
-    fq_copy(&r->zzz, &a->zzz);
-}
-
-// Point addition (simplified - should be optimized)
-__device__ __forceinline__ void point_add(G1Point* r, const G1Point* a, const G1Point* b) {
-    // Simplified point addition - this should be replaced with proper elliptic curve addition
-    // For now, just copy one of the points as a placeholder
-    point_copy(r, a);
-}
-
-// MSM Algorithm Implementation
 __global__ void gpu_msm_scalar_slicing(
     const uint8_t* scalars,
     uint64_t scalarSize,
@@ -273,35 +74,23 @@ __global__ void gpu_msm_bucket_accumulation(
     uint64_t nPoints,
     uint64_t nChunks,
     uint64_t nBuckets,
-    uint64_t chunkIdx,
+    uint64_t chunkIndex,
     G1Point* bucketMatrix
 ) {
     uint64_t threadId = blockIdx.x * blockDim.x + threadIdx.x;
-    uint64_t totalThreads = gridDim.x * blockDim.x;
-    uint64_t pointsPerThread = (nPoints + totalThreads - 1) / totalThreads;
-    uint64_t startPoint = threadId * pointsPerThread;
-    uint64_t endPoint = min(startPoint + pointsPerThread, nPoints);
+    if (threadId >= nBuckets) return;
     
-    // Initialize buckets for this thread
-    G1Point* buckets = &bucketMatrix[threadId * nBuckets];
-    for (uint64_t i = 0; i < nBuckets; i++) {
-        point_zero(&buckets[i]);
-    }
+    // Initialize bucket to zero
+    point_zero(&bucketMatrix[threadId]);
     
-    // Accumulate points into buckets
-    for (uint64_t i = startPoint; i < endPoint; i++) {
-        int bucketIndex = slicedScalars[i * nChunks + chunkIdx];
-        
-        if (bucketIndex > 0) {
-            // Add to bucket
+    // Accumulate points in this bucket
+    for (uint64_t i = 0; i < nPoints; i++) {
+        int32_t bucketIdx = slicedScalars[i * nChunks + chunkIndex];
+        if (bucketIdx == (int32_t)threadId) {
+            // Add base point to bucket
             G1Point temp;
-            point_copy(&temp, (G1Point*)&bases[i]); // Convert affine to projective
-            point_add(&buckets[bucketIndex - 1], &buckets[bucketIndex - 1], &temp);
-        } else if (bucketIndex < 0) {
-            // Subtract from bucket
-            G1Point temp;
-            point_copy(&temp, (G1Point*)&bases[i]); // Convert affine to projective
-            point_add(&buckets[-bucketIndex - 1], &buckets[-bucketIndex - 1], &temp);
+            point_copy(&temp, (G1Point*)&bases[i]);
+            point_add(&bucketMatrix[threadId], &bucketMatrix[threadId], &temp);
         }
     }
 }
@@ -310,24 +99,27 @@ __global__ void gpu_msm_chunk_reduction(
     const G1Point* bucketMatrix,
     uint64_t nBuckets,
     uint64_t nThreads,
-    G1Point* chunkResult
+    G1Point* threadResults
 ) {
     uint64_t threadId = blockIdx.x * blockDim.x + threadIdx.x;
     if (threadId >= nThreads) return;
     
-    G1Point* buckets = (G1Point*)&bucketMatrix[threadId * nBuckets];
+    // Initialize result to zero
+    point_zero(&threadResults[threadId]);
     
-    // Reduce buckets to single point (simplified)
-    G1Point t, tmp;
-    point_copy(&t, &buckets[nBuckets - 1]);
-    point_copy(&tmp, &t);
+    // Process buckets assigned to this thread
+    uint64_t bucketsPerThread = (nBuckets + nThreads - 1) / nThreads;
+    uint64_t startBucket = threadId * bucketsPerThread;
+    uint64_t endBucket = min(startBucket + bucketsPerThread, nBuckets);
     
-    for (int i = nBuckets - 2; i >= 0; i--) {
-        point_add(&tmp, &tmp, &buckets[i]);
-        point_add(&t, &t, &tmp);
+    for (uint64_t i = startBucket; i < endBucket; i++) {
+        if (!point_is_zero(&bucketMatrix[i])) {
+            // Add bucket to result
+            G1Point temp;
+            point_copy(&temp, &bucketMatrix[i]);
+            point_add(&threadResults[threadId], &threadResults[threadId], &temp);
+        }
     }
-    
-    point_copy(&chunkResult[threadId], &t);
 }
 
 // Host-side point operations (for use in host functions)
@@ -404,17 +196,9 @@ extern "C" void gpu_msm_advanced(
     if (nPoints > 32) bitsPerChunk = 6;
     if (nPoints > 64) bitsPerChunk = 7;
     if (nPoints > 128) bitsPerChunk = 8;
-    if (nPoints > 256) bitsPerChunk = 9;
-    if (nPoints > 512) bitsPerChunk = 10;
-    if (nPoints > 1024) bitsPerChunk = 11;
-    if (nPoints > 2048) bitsPerChunk = 12;
-    if (nPoints > 4096) bitsPerChunk = 13;
-    if (nPoints > 8192) bitsPerChunk = 14;
-    if (nPoints > 16384) bitsPerChunk = 15;
-    if (nPoints > 32768) bitsPerChunk = 16;
     
-    uint64_t nChunks = ((scalarSize * 8 - 1) / bitsPerChunk) + 1;
-    uint64_t nBuckets = ((uint64_t)1 << (bitsPerChunk - 1));
+    uint64_t nChunks = (scalarSize * 8 + bitsPerChunk - 1) / bitsPerChunk;
+    uint64_t nBuckets = (1 << (bitsPerChunk - 1));
     
     // Allocate GPU memory
     int32_t* d_slicedScalars;
@@ -422,19 +206,10 @@ extern "C" void gpu_msm_advanced(
     G1Point* d_chunks;
     G1Point* d_threadResults;
     
-    size_t slicedScalarsSize = nPoints * nChunks * sizeof(int32_t);
-    size_t bucketMatrixSize = nThreads * nBuckets * sizeof(G1Point);
-    size_t chunksSize = nChunks * sizeof(G1Point);
-    size_t threadResultsSize = nThreads * sizeof(G1Point);
-    
-    cudaMalloc(&d_slicedScalars, slicedScalarsSize);
-    cudaMalloc(&d_bucketMatrix, bucketMatrixSize);
-    cudaMalloc(&d_chunks, chunksSize);
-    cudaMalloc(&d_threadResults, threadResultsSize);
-    
-    // Copy input data to GPU
-    cudaMemcpy((void*)gpu_bases, gpu_bases, nPoints * sizeof(G1PointAffine), cudaMemcpyHostToDevice);
-    cudaMemcpy((void*)scalars, scalars, nPoints * scalarSize, cudaMemcpyHostToDevice);
+    cudaMalloc(&d_slicedScalars, nPoints * nChunks * sizeof(int32_t));
+    cudaMalloc(&d_bucketMatrix, nBuckets * sizeof(G1Point));
+    cudaMalloc(&d_chunks, nChunks * sizeof(G1Point));
+    cudaMalloc(&d_threadResults, nThreads * sizeof(G1Point));
     
     // Process each chunk
     for (uint64_t chunkIdx = 0; chunkIdx < nChunks; chunkIdx++) {
