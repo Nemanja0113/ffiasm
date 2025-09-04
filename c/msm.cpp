@@ -14,22 +14,14 @@ void MSM<Curve, BaseField>::run(typename Curve::Point &r,
 {
     // Check if we should use GPU acceleration
     if (shouldUseGPU(_n)) {
-        runGPU(r, _bases, _scalars, _scalarSize, _n, _nThreads);
-        return;
+        if (runGPU(r, _bases, _scalars, _scalarSize, _n, _nThreads)) {
+            return; // GPU succeeded
+        }
+        std::cerr << "MSM: GPU failed, falling back to CPU" << std::endl;
     }
     
     std::cerr << "MSM: Using CPU algorithm for " << _n << " points" << std::endl;
-    runCPU(r, _bases, _scalars, _scalarSize, _n, _nThreads);
-}
-
-template <typename Curve, typename BaseField>
-void MSM<Curve, BaseField>::runCPU(typename Curve::Point &r,
-                                   typename Curve::PointAffine *_bases,
-                                   uint8_t* _scalars,
-                                   uint64_t _scalarSize,
-                                   uint64_t _n,
-                                   uint64_t _nThreads)
-{
+    
     auto totalStart = std::chrono::high_resolution_clock::now();
     
     ThreadPool &threadPool = ThreadPool::defaultPool();

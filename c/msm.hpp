@@ -69,7 +69,7 @@ private:
                n >= ffiasm_gpu::GPUIntegration::getMinPointsForGPU();
     }
 
-    void runGPU(typename Curve::Point &r,
+    bool runGPU(typename Curve::Point &r,
                 typename Curve::PointAffine *_bases,
                 uint8_t* _scalars,
                 uint64_t _scalarSize,
@@ -80,18 +80,12 @@ private:
             r, _bases, _scalars, _scalarSize, _n, _nThreads);
         
         if (!gpu_success) {
-            std::cerr << "MSM: GPU acceleration failed, falling back to CPU" << std::endl;
-            // Fall back to CPU implementation
-            runCPU(r, _bases, _scalars, _scalarSize, _n, _nThreads);
+            std::cerr << "MSM: GPU acceleration failed" << std::endl;
         }
+        
+        return gpu_success;
     }
 
-    void runCPU(typename Curve::Point &r,
-                typename Curve::PointAffine *_bases,
-                uint8_t* _scalars,
-                uint64_t _scalarSize,
-                uint64_t _n,
-                uint64_t _nThreads);
 
 public:
     MSM(Curve &_g): g(_g) {}

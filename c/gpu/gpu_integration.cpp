@@ -1,5 +1,6 @@
 #include "gpu_integration.hpp"
 #include "gpu_msm.hpp"
+#include "../alt_bn128.hpp"
 #include <iostream>
 #include <cuda_runtime.h>
 
@@ -88,9 +89,9 @@ void GPUIntegration::printGPUPerformanceStats() {
 
 // Template specialization for G1 points
 template<>
-bool GPUIntegration::runGPUMSM<struct AltBn128::Engine::G1, struct AltBn128::Engine::F1>(
-    struct AltBn128::Engine::G1Point& result,
-    struct AltBn128::Engine::G1PointAffine* bases,
+bool GPUIntegration::runGPUMSM<AltBn128::Engine::G1, AltBn128::Engine::F1>(
+    AltBn128::Engine::G1Point& result,
+    AltBn128::Engine::G1PointAffine* bases,
     uint8_t* scalars,
     uint64_t scalarSize,
     uint64_t n,
@@ -104,8 +105,8 @@ bool GPUIntegration::runGPUMSM<struct AltBn128::Engine::G1, struct AltBn128::Eng
     
     // Use the advanced GPU MSM implementation
     extern "C" void gpu_msm_advanced(
-        struct AltBn128::Engine::G1Point* result,
-        const struct AltBn128::Engine::G1PointAffine* bases,
+        AltBn128::Engine::G1Point* result,
+        const AltBn128::Engine::G1PointAffine* bases,
         const uint8_t* scalars,
         uint64_t scalarSize,
         uint64_t nPoints,
@@ -118,9 +119,9 @@ bool GPUIntegration::runGPUMSM<struct AltBn128::Engine::G1, struct AltBn128::Eng
 
 // Template specialization for G2 points
 template<>
-bool GPUIntegration::runGPUMSM<struct AltBn128::Engine::G2, struct AltBn128::Engine::F2>(
-    struct AltBn128::Engine::G2Point& result,
-    struct AltBn128::Engine::G2PointAffine* bases,
+bool GPUIntegration::runGPUMSM<AltBn128::Engine::G2, AltBn128::Engine::F2>(
+    AltBn128::Engine::G2Point& result,
+    AltBn128::Engine::G2PointAffine* bases,
     uint8_t* scalars,
     uint64_t scalarSize,
     uint64_t n,

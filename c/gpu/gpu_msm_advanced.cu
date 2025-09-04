@@ -332,21 +332,25 @@ __global__ void gpu_msm_chunk_reduction(
 
 // Main GPU MSM function
 extern "C" void gpu_msm_advanced(
-    G1Point* result,
-    const G1PointAffine* bases,
+    void* result,
+    const void* bases,
     const uint8_t* scalars,
     uint64_t scalarSize,
     uint64_t nPoints,
     uint64_t nThreads
 ) {
+    // Cast void pointers to correct types
+    G1Point* gpu_result = (G1Point*)result;
+    const G1PointAffine* gpu_bases = (const G1PointAffine*)bases;
+    
     if (nPoints == 0) {
-        point_zero(result);
+        point_zero(gpu_result);
         return;
     }
     
     if (nPoints == 1) {
         // Single point multiplication - use CPU for now
-        point_copy(result, (G1Point*)&bases[0]);
+        point_copy(gpu_result, (G1Point*)&gpu_bases[0]);
         return;
     }
     
@@ -386,7 +390,7 @@ extern "C" void gpu_msm_advanced(
     cudaMalloc(&d_threadResults, threadResultsSize);
     
     // Copy input data to GPU
-    cudaMemcpy((void*)bases, bases, nPoints * sizeof(G1PointAffine), cudaMemcpyHostToDevice);
+    cudaMemcpy((void*)gpu_bases, gpu_bases, nPoints * sizeof(G1PointAffine), cudaMemcpyHostToDevice);
     cudaMemcpy((void*)scalars, scalars, nPoints * scalarSize, cudaMemcpyHostToDevice);
     
     // Process each chunk
@@ -403,7 +407,7 @@ extern "C" void gpu_msm_advanced(
         dim3 bucketBlockSize(256);
         dim3 bucketGridSize((nThreads + bucketBlockSize.x - 1) / bucketBlockSize.x);
         gpu_msm_bucket_accumulation<<<bucketGridSize, bucketBlockSize>>>(
-            bases, d_slicedScalars, nPoints, nChunks, nBuckets, chunkIdx, d_bucketMatrix
+            gpu_bases, d_slicedScalars, nPoints, nChunks, nBuckets, chunkIdx, d_bucketMatrix
         );
         cudaDeviceSynchronize();
         
@@ -421,20 +425,20 @@ extern "C" void gpu_msm_advanced(
     }
     
     // Final accumulation (matching CPU algorithm)
-    point_copy(result, &d_chunks[nChunks - 1]);
+    point_copy(gpu_result, &d_chunks[nChunks - 1]);
     
     for (int j = nChunks - 2; j >= 0; j--) {
         // Double the result bitsPerChunk times
         for (uint64_t i = 0; i < bitsPerChunk; i++) {
             // Point doubling - simplified
-            point_copy(result, result); // Placeholder
+            point_copy(gpu_result, gpu_result); // Placeholder
         }
         // Add chunk result
-        point_add(result, result, &d_chunks[j]);
+        point_add(gpu_result, gpu_result, &d_chunks[j]);
     }
     
     // Copy result back to host
-    cudaMemcpy(result, result, sizeof(G1Point), cudaMemcpyDeviceToHost);
+    cudaMemcpy(gpu_result, gpu_result, sizeof(G1Point), cudaMemcpyDeviceToHost);
     
     // Cleanup
     cudaFree(d_slicedScalars);
