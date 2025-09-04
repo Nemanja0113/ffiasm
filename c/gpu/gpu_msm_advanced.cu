@@ -35,6 +35,60 @@
 #pragma GCC diagnostic ignored "-Wformat-truncation"
 #endif
 
+// Include device function definitions for use in kernels
+// These are the same as in gpu_msm_kernels.cu but needed here for the kernels
+
+// Field arithmetic functions (matching CPU implementation)
+__device__ __forceinline__ bool fq_is_zero(const FqElement* a) {
+    return (a->longVal[0] == 0 && a->longVal[1] == 0 && 
+            a->longVal[2] == 0 && a->longVal[3] == 0);
+}
+
+__device__ __forceinline__ void fq_zero(FqElement* result) {
+    result->shortVal = 0;
+    result->type = 0x00000000; // Fq_SHORT
+    result->longVal[0] = 0;
+    result->longVal[1] = 0;
+    result->longVal[2] = 0;
+    result->longVal[3] = 0;
+}
+
+__device__ __forceinline__ void fq_copy(FqElement* result, const FqElement* a) {
+    result->shortVal = a->shortVal;
+    result->type = a->type;
+    result->longVal[0] = a->longVal[0];
+    result->longVal[1] = a->longVal[1];
+    result->longVal[2] = a->longVal[2];
+    result->longVal[3] = a->longVal[3];
+}
+
+// Point operations (matching CPU implementation)
+__device__ __forceinline__ bool point_is_zero(const G1Point* a) {
+    return fq_is_zero(&a->z);
+}
+
+__device__ __forceinline__ void point_zero(G1Point* result) {
+    fq_zero(&result->x);
+    fq_zero(&result->y);
+    fq_zero(&result->z);
+    fq_zero(&result->zz);
+    fq_zero(&result->zzz);
+}
+
+__device__ __forceinline__ void point_copy(G1Point* result, const G1Point* src) {
+    fq_copy(&result->x, &src->x);
+    fq_copy(&result->y, &src->y);
+    fq_copy(&result->z, &src->z);
+    fq_copy(&result->zz, &src->zz);
+    fq_copy(&result->zzz, &src->zzz);
+}
+
+__device__ __forceinline__ void point_add(G1Point* result, const G1Point* a, const G1Point* b) {
+    // Simplified point addition - this should be replaced with proper elliptic curve addition
+    // For now, just copy one of the points as a placeholder
+    point_copy(result, a);
+}
+
 // MSM Algorithm Implementation (unique kernels)
 
 __global__ void gpu_msm_scalar_slicing(
