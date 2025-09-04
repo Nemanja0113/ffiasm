@@ -26,6 +26,7 @@
 #include <cuda.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <iostream>
 #include "gpu_common.hpp"
 
 // Additional compatibility fixes
@@ -133,6 +134,19 @@ __device__ __forceinline__ void point_copy(G1Point* result, const G1Point* src) 
     fq_copy(&result->z, &src->z);
     fq_copy(&result->zz, &src->zz);
     fq_copy(&result->zzz, &src->zzz);
+}
+
+__device__ __forceinline__ void point_copy_from_affine(G1Point* result, const G1PointAffine* src) {
+    // Copy affine point to projective point (z = 1)
+    fq_copy(&result->x, &src->x);
+    fq_copy(&result->y, &src->y);
+    fq_zero(&result->z);
+    fq_zero(&result->zz);
+    fq_zero(&result->zzz);
+    // Set z = 1 for affine point
+    result->z.longVal[0] = 1;
+    result->zz.longVal[0] = 1;
+    result->zzz.longVal[0] = 1;
 }
 
 // GPU implementation of elliptic curve point addition (Point + PointAffine)
