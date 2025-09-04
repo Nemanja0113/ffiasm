@@ -4,12 +4,22 @@
 #define _Float128 __float128
 #endif
 
-// Disable problematic math.h features
+// Disable problematic math.h features (with guards to prevent redefinition warnings)
+#ifndef _GLIBCXX_USE_FLOAT128
 #define _GLIBCXX_USE_FLOAT128 0
+#endif
+#ifndef __STDC_NO_ATOMICS__
 #define __STDC_NO_ATOMICS__ 1
+#endif
+#ifndef __STDC_NO_COMPLEX__
 #define __STDC_NO_COMPLEX__ 1
+#endif
+#ifndef __STDC_NO_THREADS__
 #define __STDC_NO_THREADS__ 1
+#endif
+#ifndef __STDC_NO_VLA__
 #define __STDC_NO_VLA__ 1
+#endif
 
 // Include CUDA headers
 #include <cuda_runtime.h>
