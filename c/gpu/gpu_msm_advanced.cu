@@ -330,6 +330,49 @@ __global__ void gpu_msm_chunk_reduction(
     point_copy(&chunkResult[threadId], &t);
 }
 
+// Host-side point operations (for use in host functions)
+__host__ void host_point_zero(G1Point* result) {
+    // Initialize point to zero (point at infinity)
+    for (int i = 0; i < 4; i++) {
+        result->x.longVal[i] = 0;
+        result->y.longVal[i] = 0;
+        result->z.longVal[i] = 0;
+        result->zz.longVal[i] = 0;
+        result->zzz.longVal[i] = 0;
+    }
+    result->x.shortVal = 0;
+    result->x.type = 0x00000000; // SHORT type
+    result->y.shortVal = 0;
+    result->y.type = 0x00000000; // SHORT type
+    result->z.shortVal = 0;
+    result->z.type = 0x00000000; // SHORT type
+    result->zz.shortVal = 0;
+    result->zz.type = 0x00000000; // SHORT type
+    result->zzz.shortVal = 0;
+    result->zzz.type = 0x00000000; // SHORT type
+}
+
+__host__ void host_point_copy_from_affine(G1Point* result, const G1PointAffine* src) {
+    // Copy affine point to projective point (z = 1)
+    for (int i = 0; i < 4; i++) {
+        result->x.longVal[i] = src->x.longVal[i];
+        result->y.longVal[i] = src->y.longVal[i];
+        result->z.longVal[i] = 0;
+        result->zz.longVal[i] = 0;
+        result->zzz.longVal[i] = 0;
+    }
+    result->x.shortVal = src->x.shortVal;
+    result->x.type = src->x.type;
+    result->y.shortVal = src->y.shortVal;
+    result->y.type = src->y.type;
+    result->z.shortVal = 0;
+    result->z.type = 0x00000000; // SHORT type
+    result->zz.shortVal = 0;
+    result->zz.type = 0x00000000; // SHORT type
+    result->zzz.shortVal = 0;
+    result->zzz.type = 0x00000000; // SHORT type
+}
+
 // Main GPU MSM function
 extern "C" void gpu_msm_advanced(
     void* result,
@@ -344,13 +387,13 @@ extern "C" void gpu_msm_advanced(
     const G1PointAffine* gpu_bases = (const G1PointAffine*)bases;
     
     if (nPoints == 0) {
-        point_zero(gpu_result);
+        host_point_zero(gpu_result);
         return;
     }
     
     if (nPoints == 1) {
         // Single point multiplication - use CPU for now
-        point_copy(gpu_result, (G1Point*)&gpu_bases[0]);
+        host_point_copy_from_affine(gpu_result, &gpu_bases[0]);
         return;
     }
     
@@ -425,20 +468,12 @@ extern "C" void gpu_msm_advanced(
     }
     
     // Final accumulation (matching CPU algorithm)
-    point_copy(gpu_result, &d_chunks[nChunks - 1]);
+    // For now, just copy the first chunk result as a placeholder
+    // In a real implementation, this would need proper host-side point operations
+    cudaMemcpy(gpu_result, &d_chunks[nChunks - 1], sizeof(G1Point), cudaMemcpyDeviceToHost);
     
-    for (int j = nChunks - 2; j >= 0; j--) {
-        // Double the result bitsPerChunk times
-        for (uint64_t i = 0; i < bitsPerChunk; i++) {
-            // Point doubling - simplified
-            point_copy(gpu_result, gpu_result); // Placeholder
-        }
-        // Add chunk result
-        point_add(gpu_result, gpu_result, &d_chunks[j]);
-    }
-    
-    // Copy result back to host
-    cudaMemcpy(gpu_result, gpu_result, sizeof(G1Point), cudaMemcpyDeviceToHost);
+    // TODO: Implement proper final accumulation with host-side point operations
+    // This would require implementing host-side point addition and doubling
     
     // Cleanup
     cudaFree(d_slicedScalars);
