@@ -6,6 +6,18 @@
 #include "gpu/gpu_integration.hpp"
 #include <cuda_runtime.h>
 
+// Forward declaration of GPU kernel
+extern "C" void gpu_bucket_accumulation_kernel(
+    const void* bases,
+    const int32_t* slicedScalars,
+    uint64_t nPoints,
+    uint64_t nChunks,
+    uint64_t nBuckets,
+    uint64_t nThreads,
+    void* bucketMatrix,
+    void* chunks
+);
+
 template <typename Curve, typename BaseField>
 void MSM<Curve, BaseField>::run(typename Curve::Point &r,
                                 typename Curve::PointAffine *_bases,
@@ -131,10 +143,7 @@ void MSM<Curve, BaseField>::run(typename Curve::Point &r,
         cudaMemcpy(d_slicedScalars, slicedScalars.get(), nChunks * nPoints * sizeof(int32_t), cudaMemcpyHostToDevice);
         
         // Launch GPU kernel for bucket accumulation
-        dim3 blockSize(256);
-        dim3 gridSize((nChunks * nThreads + blockSize.x - 1) / blockSize.x);
-        
-        gpu_bucket_accumulation_kernel<<<gridSize, blockSize>>>(
+        gpu_bucket_accumulation_kernel(
             d_bases, d_slicedScalars, nPoints, nChunks, nBuckets, nThreads, d_bucketMatrix, d_chunks
         );
         cudaDeviceSynchronize();

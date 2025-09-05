@@ -369,6 +369,32 @@ __global__ void gpu_bucket_accumulation_kernel(
     }
 }
 
+// C wrapper function for calling the GPU kernel from C++
+extern "C" void gpu_bucket_accumulation_kernel(
+    const void* bases,
+    const int32_t* slicedScalars,
+    uint64_t nPoints,
+    uint64_t nChunks,
+    uint64_t nBuckets,
+    uint64_t nThreads,
+    void* bucketMatrix,
+    void* chunks
+) {
+    dim3 blockSize(256);
+    dim3 gridSize((nChunks * nThreads + blockSize.x - 1) / blockSize.x);
+    
+    gpu_bucket_accumulation_kernel<<<gridSize, blockSize>>>(
+        (const G1PointAffine*)bases,
+        slicedScalars,
+        nPoints,
+        nChunks,
+        nBuckets,
+        nThreads,
+        (G1Point*)bucketMatrix,
+        (G1Point*)chunks
+    );
+}
+
 
 // MSM Algorithm Implementation (unique kernels)
 
