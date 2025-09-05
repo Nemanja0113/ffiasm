@@ -125,7 +125,6 @@ void MSM<Curve, BaseField>::run(typename Curve::Point &r,
         std::cerr << "            MSM: Using GPU acceleration for bucket accumulation" << std::endl;
         
         // GPU-accelerated bucket accumulation
-        std::cerr << "            MSM: Using GPU acceleration for bucket accumulation" << std::endl;
         
         // Allocate GPU memory for all chunks at once
         typename Curve::PointAffine* d_bases;
@@ -135,7 +134,7 @@ void MSM<Curve, BaseField>::run(typename Curve::Point &r,
         
         cudaMalloc(&d_bases, nPoints * sizeof(typename Curve::PointAffine));
         cudaMalloc(&d_slicedScalars, nChunks * nPoints * sizeof(int32_t));
-        cudaMalloc(&d_bucketMatrix, nThreads * nBuckets * sizeof(typename Curve::Point));
+        cudaMalloc(&d_bucketMatrix, nChunks * nBuckets * sizeof(typename Curve::Point));
         cudaMalloc(&d_chunks, nChunks * sizeof(typename Curve::Point));
         
         // Copy data to GPU

@@ -322,16 +322,14 @@ __global__ void gpu_bucket_accumulation_kernel(
     G1Point* chunks
 ) {
     uint64_t globalId = blockIdx.x * blockDim.x + threadIdx.x;
-    uint64_t totalWork = nChunks * nThreads;
     
-    if (globalId >= totalWork) return;
+    // Process one chunk per GPU thread to avoid race conditions
+    if (globalId >= nChunks) return;
     
-    // Calculate which chunk and thread this GPU thread is processing
-    uint64_t chunkId = globalId / nThreads;
-    uint64_t threadId = globalId % nThreads;
+    uint64_t chunkId = globalId;
     
-    // Get thread-local bucket matrix
-    G1Point* buckets = &bucketMatrix[threadId * nBuckets];
+    // Get thread-local bucket matrix (use chunkId as threadId for simplicity)
+    G1Point* buckets = &bucketMatrix[chunkId * nBuckets];
     
     // Initialize buckets to zero
     for (uint64_t i = 0; i < nBuckets; i++) {
@@ -346,10 +344,14 @@ __global__ void gpu_bucket_accumulation_kernel(
             // Add base point to bucket (using mixed addition: Point + PointAffine)
             point_add_mixed(&buckets[bucketIndex - 1], &buckets[bucketIndex - 1], &bases[i]);
         } else if (bucketIndex < 0) {
-            // Subtract base point from bucket
-            // For now, we'll use addition with negated point (simplified)
-            // In a full implementation, we'd need proper point negation
-            point_add_mixed(&buckets[-bucketIndex - 1], &buckets[-bucketIndex - 1], &bases[i]);
+            // Subtract base point from bucket - need to negate the point first
+            G1PointAffine negatedBase;
+            negatedBase.x = bases[i].x;
+            negatedBase.y = bases[i].y;
+            // Negate y coordinate (y' = -y mod p)
+            fq_neg(&negatedBase.y, &bases[i].y);
+            
+            point_add_mixed(&buckets[-bucketIndex - 1], &buckets[-bucketIndex - 1], &negatedBase);
         }
     }
     
@@ -363,10 +365,8 @@ __global__ void gpu_bucket_accumulation_kernel(
         point_add(&t, &t, &tmp);
     }
     
-    // Store chunk result (only one thread per chunk should do this)
-    if (threadId == 0) {
-        point_copy(&chunks[chunkId], &t);
-    }
+    // Store chunk result
+    point_copy(&chunks[chunkId], &t);
 }
 
 // C wrapper function for calling the GPU kernel from C++
@@ -381,7 +381,7 @@ extern "C" void gpu_bucket_accumulation_kernel(
     void* chunks
 ) {
     dim3 blockSize(256);
-    dim3 gridSize((nChunks * nThreads + blockSize.x - 1) / blockSize.x);
+    dim3 gridSize((nChunks + blockSize.x - 1) / blockSize.x);
     
     gpu_bucket_accumulation_kernel<<<gridSize, blockSize>>>(
         (const G1PointAffine*)bases,
