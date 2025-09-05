@@ -8,6 +8,8 @@
 #ifndef _GLIBCXX_USE_FLOAT128
 #define _GLIBCXX_USE_FLOAT128 0
 #endif
+
+#include "gpu_common.hpp"
 #ifndef __STDC_NO_ATOMICS__
 #define __STDC_NO_ATOMICS__ 1
 #endif
@@ -51,18 +53,8 @@ __global__ void gpu_bucket_accumulation_kernel(
 // Include device function definitions for use in kernels
 // These are the same as in gpu_msm_kernels.cu but needed here for the kernels
 
-// AltBn128 field constants
-__constant__ uint64_t Fq_prime[4] = {
-    0x3c208c16d87cfd47, 0x97816a916871ca8d, 0xb85045b68181585d, 0x30644e72e131a029
-};
-
-__constant__ uint64_t Fq_np[4] = {
-    0x87d20782e4866389, 0x9ede7d651eca6ac9, 0xd8afcbd01833da80, 0x0f3a0b7b2d4b5c6d
-};
-
-__constant__ uint64_t Fq_r2[4] = {
-    0xf32cfc5b538afa89, 0xb5e71911d44501fb, 0x47ab1eff0a417ff6, 0x06d89f71cab8351f
-};
+// AltBn128 field constants (using existing definitions from gpu_msm_kernels.cu)
+// Fq_prime, Fq_np, and Fq_r2 are already defined in gpu_msm_kernels.cu
 
 // Field arithmetic functions with proper modular reduction
 __device__ __forceinline__ bool fq_is_zero(const FqElement* a) {
