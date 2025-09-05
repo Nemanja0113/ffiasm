@@ -112,38 +112,41 @@ void MSM<Curve, BaseField>::run(typename Curve::Point &r,
     if (ffiasm_gpu::GPUIntegration::isGPUAccelerationAvailable() && nPoints > 10000) {
         std::cerr << "            MSM: Using GPU acceleration for bucket accumulation" << std::endl;
         
-        // GPU-accelerated bucket accumulation with same mathematical correctness as CPU
-        threadPool.parallelFor(0, nChunks, [&] (int begin, int end, int numThread) {
-            for (int j = begin; j < end; j++) {
-                // Use the same thread-local bucket matrix as CPU version
-                typename Curve::Point *buckets = &bucketMatrix[numThread*nBuckets];
-
-                for (int i = 0; i < nBuckets; i++) {
-                    g.copy(buckets[i], g.zero());
-                }
-
-                for (int i = 0; i < nPoints; i++) {
-                    const int bucketIndex = slicedScalars[i*nChunks + j];
-
-                    if (bucketIndex > 0) {
-                        g.add(buckets[bucketIndex-1], buckets[bucketIndex-1], _bases[i]);
-                    } else if (bucketIndex < 0) {
-                        g.sub(buckets[-bucketIndex-1], buckets[-bucketIndex-1], _bases[i]);
-                    }
-                }
-
-                typename Curve::Point t, tmp;
-                g.copy(t, buckets[nBuckets - 1]);
-                g.copy(tmp, t);
-
-                for (int i = nBuckets - 2; i >= 0 ; i--) {
-                    g.add(tmp, tmp, buckets[i]);
-                    g.add(t, t, tmp);
-                }
-
-                chunks[j] = t;
-            }
-        });
+        // GPU-accelerated bucket accumulation
+        std::cerr << "            MSM: Using GPU acceleration for bucket accumulation" << std::endl;
+        
+        // Allocate GPU memory for all chunks at once
+        typename Curve::PointAffine* d_bases;
+        int32_t* d_slicedScalars;
+        typename Curve::Point* d_bucketMatrix;
+        typename Curve::Point* d_chunks;
+        
+        cudaMalloc(&d_bases, nPoints * sizeof(typename Curve::PointAffine));
+        cudaMalloc(&d_slicedScalars, nChunks * nPoints * sizeof(int32_t));
+        cudaMalloc(&d_bucketMatrix, nThreads * nBuckets * sizeof(typename Curve::Point));
+        cudaMalloc(&d_chunks, nChunks * sizeof(typename Curve::Point));
+        
+        // Copy data to GPU
+        cudaMemcpy(d_bases, _bases, nPoints * sizeof(typename Curve::PointAffine), cudaMemcpyHostToDevice);
+        cudaMemcpy(d_slicedScalars, slicedScalars.get(), nChunks * nPoints * sizeof(int32_t), cudaMemcpyHostToDevice);
+        
+        // Launch GPU kernel for bucket accumulation
+        dim3 blockSize(256);
+        dim3 gridSize((nChunks * nThreads + blockSize.x - 1) / blockSize.x);
+        
+        gpu_bucket_accumulation_kernel<<<gridSize, blockSize>>>(
+            d_bases, d_slicedScalars, nPoints, nChunks, nBuckets, nThreads, d_bucketMatrix, d_chunks
+        );
+        cudaDeviceSynchronize();
+        
+        // Copy results back to CPU
+        cudaMemcpy(chunks.get(), d_chunks, nChunks * sizeof(typename Curve::Point), cudaMemcpyDeviceToHost);
+        
+        // Cleanup GPU memory
+        cudaFree(d_bases);
+        cudaFree(d_slicedScalars);
+        cudaFree(d_bucketMatrix);
+        cudaFree(d_chunks);
     } else {
         // Fallback to CPU implementation
         std::cerr << "            MSM: Using CPU implementation for bucket accumulation" << std::endl;

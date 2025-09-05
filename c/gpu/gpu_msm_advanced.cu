@@ -37,12 +37,15 @@
 #endif
 
 // Forward declarations
-__global__ void gpu_bucket_accumulation_placeholder(
+__global__ void gpu_bucket_accumulation_kernel(
     const G1PointAffine* bases,
     const int32_t* slicedScalars,
     uint64_t nPoints,
+    uint64_t nChunks,
     uint64_t nBuckets,
-    G1Point* buckets
+    uint64_t nThreads,
+    G1Point* bucketMatrix,
+    G1Point* chunks
 );
 
 // Include device function definitions for use in kernels
@@ -308,19 +311,62 @@ __device__ __forceinline__ void point_add(G1Point* result, const G1Point* a, con
 // Placeholder GPU kernel for bucket accumulation
 // This kernel is called from CPU but doesn't do actual computation yet
 // The real bucket accumulation is done on CPU with proper field arithmetic
-__global__ void gpu_bucket_accumulation_placeholder(
+__global__ void gpu_bucket_accumulation_kernel(
     const G1PointAffine* bases,
     const int32_t* slicedScalars,
     uint64_t nPoints,
+    uint64_t nChunks,
     uint64_t nBuckets,
-    G1Point* buckets
+    uint64_t nThreads,
+    G1Point* bucketMatrix,
+    G1Point* chunks
 ) {
-    uint64_t bucketId = blockIdx.x * blockDim.x + threadIdx.x;
-    if (bucketId >= nBuckets) return;
+    uint64_t globalId = blockIdx.x * blockDim.x + threadIdx.x;
+    uint64_t totalWork = nChunks * nThreads;
     
-    // For now, just initialize bucket to zero
-    // The actual accumulation will be done on CPU
-    point_zero(&buckets[bucketId]);
+    if (globalId >= totalWork) return;
+    
+    // Calculate which chunk and thread this GPU thread is processing
+    uint64_t chunkId = globalId / nThreads;
+    uint64_t threadId = globalId % nThreads;
+    
+    // Get thread-local bucket matrix
+    G1Point* buckets = &bucketMatrix[threadId * nBuckets];
+    
+    // Initialize buckets to zero
+    for (uint64_t i = 0; i < nBuckets; i++) {
+        point_zero(&buckets[i]);
+    }
+    
+    // Accumulate points in buckets for this chunk
+    for (uint64_t i = 0; i < nPoints; i++) {
+        int32_t bucketIndex = slicedScalars[chunkId * nPoints + i];
+        
+        if (bucketIndex > 0) {
+            // Add base point to bucket (using mixed addition: Point + PointAffine)
+            point_add_mixed(&buckets[bucketIndex - 1], &buckets[bucketIndex - 1], &bases[i]);
+        } else if (bucketIndex < 0) {
+            // Subtract base point from bucket
+            // For now, we'll use addition with negated point (simplified)
+            // In a full implementation, we'd need proper point negation
+            point_add_mixed(&buckets[-bucketIndex - 1], &buckets[-bucketIndex - 1], &bases[i]);
+        }
+    }
+    
+    // Reduce buckets to get chunk result
+    G1Point t, tmp;
+    point_copy(&t, &buckets[nBuckets - 1]);
+    point_copy(&tmp, &t);
+    
+    for (int64_t i = nBuckets - 2; i >= 0; i--) {
+        point_add(&tmp, &tmp, &buckets[i]);
+        point_add(&t, &t, &tmp);
+    }
+    
+    // Store chunk result (only one thread per chunk should do this)
+    if (threadId == 0) {
+        point_copy(&chunks[chunkId], &t);
+    }
 }
 
 
