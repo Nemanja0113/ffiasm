@@ -451,9 +451,46 @@ extern "C" void gpu_msm_advanced(
     // 5. Copy results back to CPU
     // 6. Perform final accumulation on CPU
     
-    // For now, just set result to zero point
+    // For now, just set result to zero point using CPU operations
     G1Point* result_point = (G1Point*)result;
-    point_zero(result_point);
+    
+    // Set point at infinity representation: (1, 1, 0, 0, 0)
+    // x = 1
+    result_point->x.longVal[0] = 1;
+    for (int i = 1; i < 4; i++) {
+        result_point->x.longVal[i] = 0;
+    }
+    result_point->x.shortVal = 0;
+    result_point->x.type = 0x40000000; // MONTGOMERY type
+    
+    // y = 1
+    result_point->y.longVal[0] = 1;
+    for (int i = 1; i < 4; i++) {
+        result_point->y.longVal[i] = 0;
+    }
+    result_point->y.shortVal = 0;
+    result_point->y.type = 0x40000000; // MONTGOMERY type
+    
+    // z = 0 (point at infinity)
+    for (int i = 0; i < 4; i++) {
+        result_point->z.longVal[i] = 0;
+    }
+    result_point->z.shortVal = 0;
+    result_point->z.type = 0x40000000; // MONTGOMERY type
+    
+    // zz = 0
+    for (int i = 0; i < 4; i++) {
+        result_point->zz.longVal[i] = 0;
+    }
+    result_point->zz.shortVal = 0;
+    result_point->zz.type = 0x40000000; // MONTGOMERY type
+    
+    // zzz = 0
+    for (int i = 0; i < 4; i++) {
+        result_point->zzz.longVal[i] = 0;
+    }
+    result_point->zzz.shortVal = 0;
+    result_point->zzz.type = 0x40000000; // MONTGOMERY type
 }
 
 // C wrapper for the GPU kernel
