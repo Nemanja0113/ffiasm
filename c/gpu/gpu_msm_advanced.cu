@@ -31,11 +31,11 @@ __device__ __forceinline__ bool point_is_zero(const G1Point* p) {
 
 // Set point to zero (point at infinity)
 __device__ __forceinline__ void point_zero(G1Point* result) {
-    fq_zero(&result->x);
-    fq_zero(&result->y);
-    fq_zero(&result->z);
-    fq_zero(&result->zz);
-    fq_zero(&result->zzz);
+    fq_one(&result->x);    // x = 1 (point at infinity representation)
+    fq_one(&result->y);    // y = 1 (point at infinity representation)
+    fq_zero(&result->z);   // z = 0 (this makes it point at infinity)
+    fq_zero(&result->zz);  // zz = 0
+    fq_zero(&result->zzz); // zzz = 0
 }
 
 // Copy point
@@ -47,6 +47,33 @@ __device__ __forceinline__ void point_copy(G1Point* result, const G1Point* src) 
     fq_copy(&result->zzz, &src->zzz);
 }
 
+// Negate affine point: (x, y) -> (x, -y)
+// Based on CPU implementation from curve.cpp line 614-617
+__device__ __forceinline__ void point_neg_affine(G1PointAffine* result, const G1PointAffine* a) {
+    fq_copy(&result->x, &a->x);
+    FqElement zero;
+    fq_zero(&zero);
+    fq_sub(&result->y, &zero, &a->y); // Negate y coordinate
+}
+
+// Negate projective point: (x, y, z, zz, zzz) -> (x, -y, z, zz, zzz)
+// Based on CPU implementation from curve.cpp line 583-588
+__device__ __forceinline__ void point_neg(G1Point* result, const G1Point* a) {
+    // If point is at infinity, negation is still point at infinity
+    if (point_is_zero(a)) {
+        point_zero(result);
+        return;
+    }
+    
+    fq_copy(&result->x, &a->x);
+    FqElement zero;
+    fq_zero(&zero);
+    fq_sub(&result->y, &zero, &a->y); // Negate y coordinate
+    fq_copy(&result->z, &a->z);
+    fq_copy(&result->zz, &a->zz);
+    fq_copy(&result->zzz, &a->zzz);
+}
+
 // Copy point from affine to projective coordinates
 __device__ __forceinline__ void point_copy_from_affine(G1Point* result, const G1PointAffine* src) {
     fq_copy(&result->x, &src->x);
@@ -56,12 +83,86 @@ __device__ __forceinline__ void point_copy_from_affine(G1Point* result, const G1
     fq_one(&result->zzz); // Set zzz = 1
 }
 
+// Field multiplication by 2
+__device__ __forceinline__ void fq_mul2(FqElement* result, const FqElement* a) {
+    fq_add(result, a, a);
+}
+
+// Field multiplication by 3
+__device__ __forceinline__ void fq_mul3(FqElement* result, const FqElement* a) {
+    FqElement tmp;
+    fq_mul2(&tmp, a);
+    fq_add(result, &tmp, a);
+}
+
+// Point doubling: affine -> projective
+// Based on CPU implementation from curve.cpp lines 408-456
+__device__ __forceinline__ void point_dbl_mixed(G1Point* result, const G1PointAffine* a) {
+    // If a is point at infinity, result is point at infinity
+    if (fq_is_zero(&a->x) && fq_is_zero(&a->y)) {
+        fq_one(&result->x);
+        fq_one(&result->y);
+        fq_zero(&result->zz);
+        fq_zero(&result->zzz);
+        return;
+    }
+    
+    FqElement tmp;
+    
+    // U = 2*Y1
+    FqElement U;
+    fq_mul2(&U, &a->y);
+    
+    // V = U^2   ; Already store in ZZ3
+    fq_square(&result->zz, &U);
+    
+    // W = U*V   ; Already store in ZZZ3
+    fq_mul(&result->zzz, &U, &result->zz);
+    
+    // S = X1*V
+    FqElement S;
+    fq_mul(&S, &a->x, &result->zz);
+    
+    // M = 3*X1^2+a
+    // For AltBn128: a = 0, so M = 3*X1^2
+    FqElement M;
+    fq_square(&M, &a->x);
+    fq_mul3(&M, &M);  // M = 3*X1^2 (since a = 0 for AltBn128)
+    
+    // X3 = M^2-2*S
+    fq_square(&result->x, &M);
+    fq_sub(&result->x, &result->x, &S);
+    fq_sub(&result->x, &result->x, &S);
+    
+    // Y3 = M*(S-X3)-W*Y1
+    fq_mul(&tmp, &result->zzz, &a->y);
+    fq_sub(&result->y, &S, &result->x);
+    fq_mul(&result->y, &M, &result->y);
+    fq_sub(&result->y, &result->y, &tmp);
+    
+    // ZZ3 = V ; Already stored
+    // ZZZ3 = W ; Already stored
+}
+
 // Mixed addition: projective + affine -> projective
-// This is a simplified implementation - for full correctness, we'd need the complete elliptic curve formulas
+// Based on the CPU implementation from curve.cpp lines 183-248
 __device__ __forceinline__ void point_add_mixed(G1Point* result, const G1Point* a, const G1PointAffine* b) {
     // If a is point at infinity, result = b
     if (point_is_zero(a)) {
-        point_copy_from_affine(result, b);
+        // Match CPU's copy(Point, PointAffine) function exactly
+        if (fq_is_zero(&b->x) && fq_is_zero(&b->y)) {
+            // b is point at infinity
+            fq_one(&result->x);
+            fq_one(&result->y);
+            fq_zero(&result->zz);
+            fq_zero(&result->zzz);
+        } else {
+            // b is regular point
+            fq_copy(&result->x, &b->x);
+            fq_copy(&result->y, &b->y);
+            fq_one(&result->zz);
+            fq_one(&result->zzz);
+        }
         return;
     }
     
@@ -71,9 +172,74 @@ __device__ __forceinline__ void point_add_mixed(G1Point* result, const G1Point* 
         return;
     }
     
-    // Simplified mixed addition (placeholder - would need full formula from curve.cpp)
-    // For now, just copy a to avoid mathematical errors
-    point_copy(result, a);
+    FqElement tmp;
+    
+    // U2 = X2*ZZ1
+    FqElement U2;
+    fq_mul(&U2, &b->x, &a->zz);
+    
+    // S2 = Y2*ZZZ1
+    FqElement S2;
+    fq_mul(&S2, &b->y, &a->zzz);
+    
+    // P = U2-X1
+    FqElement P;
+    fq_sub(&P, &U2, &a->x);
+    
+    // R = S2-Y1
+    FqElement R;
+    fq_sub(&R, &S2, &a->y);
+    
+    if (fq_is_zero(&P) && fq_is_zero(&R)) {
+        // Points are equal, need to double
+        // Use proper point doubling formula from CPU
+        point_dbl_mixed(result, b);
+        return;
+    }
+    
+    // PP = P^2
+    FqElement PP;
+    fq_square(&PP, &P);
+    
+    // PPP = P*PP
+    FqElement PPP;
+    fq_mul(&PPP, &P, &PP);
+    
+    // Q = X1*PP
+    FqElement Q;
+    fq_mul(&Q, &a->x, &PP);
+    
+    // X3 = R^2-PPP-2*Q
+    fq_square(&result->x, &R);
+    fq_sub(&result->x, &result->x, &PPP);
+    fq_sub(&result->x, &result->x, &Q);
+    fq_sub(&result->x, &result->x, &Q);
+    
+    // Y3 = R*(Q-X3)-Y1*PPP
+    fq_mul(&tmp, &a->y, &PPP);
+    fq_sub(&result->y, &Q, &result->x);
+    fq_mul(&result->y, &result->y, &R);
+    fq_sub(&result->y, &result->y, &tmp);
+    
+    // ZZ3 = ZZ1*PP
+    fq_mul(&result->zz, &a->zz, &PP);
+    
+    // ZZZ3 = ZZZ1*PPP
+    fq_mul(&result->zzz, &a->zzz, &PPP);
+}
+
+// Point subtraction: projective - affine -> projective
+// Implemented as: a - b = a + (-b)
+__device__ __forceinline__ void point_sub_mixed(G1Point* result, const G1Point* a, const G1PointAffine* b) {
+    // If b is point at infinity, result = a
+    if (fq_is_zero(&b->x) && fq_is_zero(&b->y)) {
+        point_copy(result, a);
+        return;
+    }
+    
+    G1PointAffine neg_b;
+    point_neg_affine(&neg_b, b);
+    point_add_mixed(result, a, &neg_b);
 }
 
 // Point addition: projective + projective -> projective
@@ -128,11 +294,8 @@ __global__ void gpu_bucket_accumulation_kernel(
             point_add_mixed(&buckets[bucketIndex - 1], &buckets[bucketIndex - 1], &bases[i]);
         } else if (bucketIndex < 0) {
             // For negative bucket indices, we need to subtract the point
-            // This is a simplified implementation - in practice, we'd need proper point negation
-            G1PointAffine negatedBase;
-            fq_copy(&negatedBase.x, &bases[i].x);
-            fq_sub(&negatedBase.y, &Fq_zero, &bases[i].y); // Negate y coordinate
-            point_add_mixed(&buckets[-bucketIndex - 1], &buckets[-bucketIndex - 1], &negatedBase);
+            // Use proper point subtraction: a - b = a + (-b)
+            point_sub_mixed(&buckets[-bucketIndex - 1], &buckets[-bucketIndex - 1], &bases[i]);
         }
     }
     
