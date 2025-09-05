@@ -99,6 +99,14 @@ __device__ __forceinline__ void fq_sub(FqElement* result, const FqElement* a, co
     result->type = 0x00000000; // LONG type
 }
 
+__device__ __forceinline__ void fq_neg(FqElement* result, const FqElement* a) {
+    // Field negation: result = -a mod p
+    // For now, use simplified negation (0 - a)
+    FqElement zero;
+    fq_zero(&zero);
+    fq_sub(result, &zero, a);
+}
+
 __device__ __forceinline__ void fq_mul(FqElement* result, const FqElement* a, const FqElement* b) {
     // Simplified field multiplication - in real implementation would use proper modular arithmetic
     // For now, use basic multiplication without modular reduction
