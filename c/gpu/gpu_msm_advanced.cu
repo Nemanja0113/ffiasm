@@ -433,6 +433,28 @@ __global__ void gpu_bucket_accumulation_kernel(
 // HOST FUNCTIONS
 // ============================================================================
 
+// C wrapper for the GPU MSM function
+extern "C" void gpu_msm_advanced(
+    void* result,
+    const void* bases,
+    const uint8_t* scalars,
+    uint64_t scalarSize,
+    uint64_t nPoints,
+    uint64_t nThreads
+) {
+    // This is a simplified implementation
+    // In a full implementation, this would:
+    // 1. Slice the scalars into chunks
+    // 2. Allocate GPU memory
+    // 3. Copy data to GPU
+    // 4. Launch the bucket accumulation kernel
+    // 5. Copy results back to CPU
+    // 6. Perform final accumulation on CPU
+    
+    // For now, just set result to zero point
+    G1Point* result_point = (G1Point*)result;
+    point_zero(result_point);
+}
 
 // C wrapper for the GPU kernel
 extern "C" void gpu_bucket_accumulation_kernel(
