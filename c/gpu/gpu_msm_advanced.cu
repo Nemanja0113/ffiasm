@@ -433,23 +433,6 @@ __global__ void gpu_bucket_accumulation_kernel(
 // HOST FUNCTIONS
 // ============================================================================
 
-// Host function to copy point from affine to projective coordinates
-__host__ void host_point_copy_from_affine(G1Point* result, const G1PointAffine* src) {
-    fq_copy(&result->x, &src->x);
-    fq_copy(&result->y, &src->y);
-    fq_one(&result->z);   // Set z = 1 for affine points
-    fq_one(&result->zz);  // Set zz = 1
-    fq_one(&result->zzz); // Set zzz = 1
-}
-
-// Host function to copy point
-__host__ void host_point_copy(G1Point* result, const G1Point* src) {
-    fq_copy(&result->x, &src->x);
-    fq_copy(&result->y, &src->y);
-    fq_copy(&result->z, &src->z);
-    fq_copy(&result->zz, &src->zz);
-    fq_copy(&result->zzz, &src->zzz);
-}
 
 // C wrapper for the GPU kernel
 extern "C" void gpu_bucket_accumulation_kernel(
