@@ -20,9 +20,126 @@ __global__ void gpu_bucket_accumulation_kernel(
 );
 
 // ============================================================================
+// FIELD ARITHMETIC OPERATIONS
+// ============================================================================
+
+// Check if field element is zero
+__device__ __forceinline__ bool fq_is_zero(const FqElement* a) {
+    for (int i = 0; i < 4; i++) {
+        if (a->longVal[i] != 0) return false;
+    }
+    return true;
+}
+
+// Set field element to zero
+__device__ __forceinline__ void fq_zero(FqElement* result) {
+    for (int i = 0; i < 4; i++) {
+        result->longVal[i] = 0;
+    }
+    result->shortVal = 0;
+    result->type = 0x40000000; // MONTGOMERY type
+}
+
+// Set field element to one
+__device__ __forceinline__ void fq_one(FqElement* result) {
+    result->longVal[0] = 1;
+    for (int i = 1; i < 4; i++) {
+        result->longVal[i] = 0;
+    }
+    result->shortVal = 0;
+    result->type = 0x40000000; // MONTGOMERY type
+}
+
+// Copy field element
+__device__ __forceinline__ void fq_copy(FqElement* result, const FqElement* a) {
+    for (int i = 0; i < 4; i++) {
+        result->longVal[i] = a->longVal[i];
+    }
+    result->shortVal = a->shortVal;
+    result->type = a->type;
+}
+
+// Field addition
+__device__ __forceinline__ void fq_add(FqElement* result, const FqElement* a, const FqElement* b) {
+    uint64_t sum[4];
+    uint64_t carry = 0;
+    
+    for (int i = 0; i < 4; i++) {
+        uint64_t temp = a->longVal[i] + b->longVal[i] + carry;
+        sum[i] = temp & 0xFFFFFFFFFFFFFFFFULL;
+        carry = temp >> 32;
+    }
+    
+    // Simplified reduction (placeholder)
+    for (int i = 0; i < 4; i++) {
+        result->longVal[i] = sum[i];
+    }
+    
+    result->shortVal = 0;
+    result->type = 0x40000000; // MONTGOMERY type
+}
+
+// Field subtraction
+__device__ __forceinline__ void fq_sub(FqElement* result, const FqElement* a, const FqElement* b) {
+    uint64_t diff[4];
+    uint64_t borrow = 0;
+    
+    for (int i = 0; i < 4; i++) {
+        uint64_t temp = a->longVal[i] - b->longVal[i] - borrow;
+        if (a->longVal[i] >= b->longVal[i] + borrow) {
+            diff[i] = temp;
+            borrow = 0;
+        } else {
+            diff[i] = temp;
+            borrow = 1;
+        }
+    }
+    
+    // Simplified reduction (placeholder)
+    for (int i = 0; i < 4; i++) {
+        result->longVal[i] = diff[i];
+    }
+    
+    result->shortVal = 0;
+    result->type = 0x40000000; // MONTGOMERY type
+}
+
+// Field multiplication with Montgomery reduction
+__device__ __forceinline__ void fq_mul(FqElement* result, const FqElement* a, const FqElement* b) {
+    // Simplified Montgomery multiplication
+    // This is a placeholder - real implementation would be much more complex
+    uint64_t temp[8] = {0}; // 8 words for intermediate result
+    
+    // Basic multiplication (placeholder)
+    for (int i = 0; i < 4; i++) {
+        for (int j = 0; j < 4; j++) {
+            if (i + j < 8) {
+                uint64_t product = a->longVal[i] * b->longVal[j];
+                temp[i + j] += product & 0xFFFFFFFFFFFFFFFFULL;
+                if (i + j + 1 < 8) {
+                    temp[i + j + 1] += product >> 32;
+                }
+            }
+        }
+    }
+    
+    // Simplified reduction (placeholder)
+    for (int i = 0; i < 4; i++) {
+        result->longVal[i] = temp[i];
+    }
+    
+    result->shortVal = 0;
+    result->type = 0x40000000; // MONTGOMERY type
+}
+
+// Field squaring
+__device__ __forceinline__ void fq_square(FqElement* result, const FqElement* a) {
+    fq_mul(result, a, a);
+}
+
+// ============================================================================
 // ELLIPTIC CURVE POINT OPERATIONS
 // ============================================================================
-// These functions use the field arithmetic from gpu_msm_kernels.cu
 
 // Check if point is at infinity
 __device__ __forceinline__ bool point_is_zero(const G1Point* p) {
@@ -45,6 +162,28 @@ __device__ __forceinline__ void point_copy(G1Point* result, const G1Point* src) 
     fq_copy(&result->z, &src->z);
     fq_copy(&result->zz, &src->zz);
     fq_copy(&result->zzz, &src->zzz);
+}
+
+
+// Copy point from affine to projective coordinates
+__device__ __forceinline__ void point_copy_from_affine(G1Point* result, const G1PointAffine* src) {
+    fq_copy(&result->x, &src->x);
+    fq_copy(&result->y, &src->y);
+    fq_one(&result->z);   // Set z = 1 for affine points
+    fq_one(&result->zz);  // Set zz = 1
+    fq_one(&result->zzz); // Set zzz = 1
+}
+
+// Field multiplication by 2
+__device__ __forceinline__ void fq_mul2(FqElement* result, const FqElement* a) {
+    fq_add(result, a, a);
+}
+
+// Field multiplication by 3
+__device__ __forceinline__ void fq_mul3(FqElement* result, const FqElement* a) {
+    FqElement tmp;
+    fq_mul2(&tmp, a);
+    fq_add(result, &tmp, a);
 }
 
 // Negate affine point: (x, y) -> (x, -y)
@@ -72,27 +211,6 @@ __device__ __forceinline__ void point_neg(G1Point* result, const G1Point* a) {
     fq_copy(&result->z, &a->z);
     fq_copy(&result->zz, &a->zz);
     fq_copy(&result->zzz, &a->zzz);
-}
-
-// Copy point from affine to projective coordinates
-__device__ __forceinline__ void point_copy_from_affine(G1Point* result, const G1PointAffine* src) {
-    fq_copy(&result->x, &src->x);
-    fq_copy(&result->y, &src->y);
-    fq_one(&result->z);   // Set z = 1 for affine points
-    fq_one(&result->zz);  // Set zz = 1
-    fq_one(&result->zzz); // Set zzz = 1
-}
-
-// Field multiplication by 2
-__device__ __forceinline__ void fq_mul2(FqElement* result, const FqElement* a) {
-    fq_add(result, a, a);
-}
-
-// Field multiplication by 3
-__device__ __forceinline__ void fq_mul3(FqElement* result, const FqElement* a) {
-    FqElement tmp;
-    fq_mul2(&tmp, a);
-    fq_add(result, &tmp, a);
 }
 
 // Point doubling: affine -> projective
